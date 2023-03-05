@@ -1,0 +1,5 @@
+packages:
+  ./
+
+package type-stuff
+  tests: True
