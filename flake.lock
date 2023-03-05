@@ -15,7 +15,38 @@
         "type": "github"
       }
     },
+    "flake-utils_2": {
+      "locked": {
+        "lastModified": 1644229661,
+        "narHash": "sha256-1YdnJAsNy69bpcjuoKdOYQX0YxZBiCYZo4Twxerqv7k=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "3cecb5b042f7f209c56ffd8371b2711a290ec797",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
+      "locked": {
+        "lastModified": 1676428076,
+        "narHash": "sha256-8caqXsVSUvZqp4/pOLjbWWabzLEV/ZfDUiEv32WumKw=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e0a054002198445ef987b55c34cde892cecc0de7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "release-22.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
       "locked": {
         "lastModified": 1676428076,
         "narHash": "sha256-8caqXsVSUvZqp4/pOLjbWWabzLEV/ZfDUiEv32WumKw=",
@@ -34,7 +65,27 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "unify": "unify"
+      }
+    },
+    "unify": {
+      "inputs": {
+        "flake-utils": "flake-utils_2",
+        "nixpkgs": "nixpkgs_2"
+      },
+      "locked": {
+        "lastModified": 1677686483,
+        "narHash": "sha256-8EI1fU+RQJ9zndEWiI9W9xWivyuzoqnFLuLVwMsJzms=",
+        "owner": "jonascarpay",
+        "repo": "unify",
+        "rev": "80aec213b2e5dcab21a336f99d90589a6c01f683",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jonascarpay",
+        "repo": "unify",
+        "type": "github"
       }
     }
   },

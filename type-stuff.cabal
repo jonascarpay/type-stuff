@@ -35,6 +35,7 @@ library
   build-depends:
     , containers
     , mtl
+    , unify
 
 executable type-stuff-exe
   import:         common-options
@@ -51,8 +52,8 @@ test-suite type-stuff-test
   build-depends:
     , hspec
     , HUnit
-    , type-stuff
     , QuickCheck
+    , type-stuff
 
   ghc-options:    -threaded -rtsopts -with-rtsopts=-N
 
