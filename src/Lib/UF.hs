@@ -14,6 +14,9 @@ data Link s a
   = Rep a
   | Link (Point s a)
 
+desc :: MonadST m => Point (World m) a -> m a
+desc = fmap snd . repr
+
 {-# INLINE repr #-}
 repr :: MonadST m => Point (World m) a -> m (Point (World m) a, a)
 repr p =

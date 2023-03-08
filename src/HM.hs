@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RankNTypes #-}
 
 module HM where
@@ -29,6 +30,40 @@ data TypeF a
   | TUnit
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
+type Check s h = ReaderT h (ExceptT String (ST s))
+
+hole :: Check s h h
+hole = undefined
+
+data T s h = Hole h | Def (Scheme h)
+
+type Scheme = Telescope Proxy TypeF
+
+type TVar s h = Point s (T s h)
+
+type TVar1 s h = TVar s (Bind1 (TVar s h))
+
+closeS :: Scheme (TVar1 s h) -> Check s h (Scheme (Bind1 (TVar s h)))
+closeS = traverse closeV
+
+closeV :: TVar s (Bind1 (TVar s h)) -> Check s h (Bind1 (TVar s h))
+closeV p =
+  desc p >>= \case
+    Hole (B ()) -> pure B1
+    Hole (F h) -> pure $ F h
+    Def sch -> _ sch
+
+foo :: Scheme (Bind1 (TVar1 s h)) -> Check s h (Bind1 (TVar s h))
+foo sch = do
+  v <- fresh $ Def $ _ sch
+  pure $ F v
+
+-- closeT :: T s (Bind1 (TVar s h)) -> Check s h (Bind1 (T s h))
+-- closeT (Hole (F h)) = pure (F $ Hole h)
+-- closeT (Hole B1) = pure B1
+-- closeT (Def sch) = _ sch
+
+{--
 type Type = Free TypeF
 
 -- newtype Scheme a = Scheme (Telescope Proxy Type a)
@@ -136,3 +171,4 @@ infer (Let bind body) p = do
     infer bind vbind
     pure vbind
   infer (instantiate1 vbind body) p
+-}
