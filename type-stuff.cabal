@@ -31,9 +31,13 @@ common common-options
 library
   import:          common-options
   hs-source-dirs:  src
-  exposed-modules: Lib
+  exposed-modules:
+    Lib
+    Lib.UF
+
   build-depends:
     , containers
+    , monad-st
     , mtl
     , unify
 

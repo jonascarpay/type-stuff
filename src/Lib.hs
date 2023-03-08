@@ -21,7 +21,7 @@ instance Functor f => Monad (Free f) where
 data Bind b a
   = B b
   | F a
-  deriving (Eq, Show, Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 pattern B1 :: Bind () a
 pattern B1 = B ()
@@ -45,3 +45,8 @@ instantiate1 a = fmap (unbind1 a id)
 data Telescope f g a
   = Scope (f a) (Telescope f g (Bind1 a))
   | Nil (g a)
+  deriving (Functor, Foldable, Traversable)
+
+flatten :: Telescope f (Telescope f g) a -> Telescope f g a
+flatten (Scope f k) = Scope f (flatten k)
+flatten (Nil g) = g

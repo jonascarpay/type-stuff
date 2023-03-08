@@ -1,14 +1,17 @@
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes #-}
 
 module HM where
 
 import Control.Monad.Except
 import Control.Monad.Reader
-import Control.Unify hiding (local)
-import qualified Control.Unify as Unify
+import Control.Monad.ST
+import Control.Monad.State.Strict
 import Data.Foldable
 import Data.Proxy
 import Lib
+import Lib.UF
 
 data Term a
   = Var a
@@ -30,28 +33,23 @@ type Type = Free TypeF
 
 -- newtype Scheme a = Scheme (Telescope Proxy Type a)
 
-type Scheme s = Telescope Proxy TypeF (Point s)
+type TVar s = Point s (T s)
 
-data T s = Hole Int | Def (Telescope Proxy TypeF (Point s))
+type Scheme s = Telescope Proxy TypeF (TVar s)
 
-type Check s = ReaderT Int (ExceptT String (Unify s (T s)))
+data T s = Hole Int | Def (Scheme s)
 
-liftU :: Unify s (T s) a -> Check s a
-liftU = lift . lift
+type Check s = ReaderT Int (ExceptT String (ST s))
 
-freshHole :: Check s (Point s)
+-- unifyV :: TVar s ->
+
+freshHole :: Check s (TVar s)
 freshHole = do
   n <- ask
-  liftU $ fresh (Hole n)
+  fresh (Hole n)
 
-unifyP :: Point s -> Point s -> Check s ()
-unifyP pa pb
-  | pa == pb = pure ()
-  | otherwise = do
-      a <- liftU $ readPoint pa
-      b <- liftU $ readPoint pb
-      r <- unifyT a b
-      liftU $ unify pa pb >> writePoint pa r
+unifyP :: TVar s -> TVar s -> Check s ()
+unifyP = unifyWith unifyT
 
 unifyT :: T s -> T s -> Check s (T s)
 unifyT (Hole a) (Hole b) = pure $ Hole (min a b)
@@ -72,7 +70,7 @@ unifyTe (Nil a) (Nil b) = do
   let open = toList r
   undefined
 
-unifyTy :: TypeF (Point s) -> TypeF (Point s) -> Check s (TypeF (Point s))
+unifyTy :: TypeF (TVar s) -> TypeF (TVar s) -> Check s (TypeF (TVar s))
 unifyTy (Arr a1 b1) (Arr a2 b2) = do
   unifyP a1 a2
   unifyP b1 b2
@@ -81,25 +79,60 @@ unifyTy TInt TInt = pure TInt
 unifyTy TUnit TUnit = pure TUnit
 unifyTy a b = throwError $ "Couldn't match " <> show (void a) <> " with " <> show (void b)
 
-infer :: Term (Point s) -> Point s -> Check s ()
+close :: T s -> Check s (T s)
+close s = do
+  lvl <- ask
+  (s', n) <- runStateT (capture (fT lvl) s) 0
+  pure $ close' n s'
+  where
+    fT :: Int -> T s -> StateT Int (Check s) (Maybe Int)
+    fT lvl (Hole n) | n >= lvl = state $ \c -> (Just c, c + 1)
+    fT _ _ = pure Nothing
+    close' :: Int -> Telescope Proxy TypeF (Either Int a) -> Telescope Proxy TypeF a
+    close' n sc = go n (\wrap fi fa -> wrap (either fi fa <$> sc))
+    go ::
+      Int ->
+      ( forall r.
+        (Telescope Proxy TypeF r -> Telescope Proxy TypeF a) ->
+        (Int -> r) ->
+        (a -> r) ->
+        q
+      ) ->
+      q
+    go 0 k = k id (\x -> error $ "indexError: " <> show x) id
+    go n k =
+      let n' = n - 1
+       in go n' (\w fi fa -> k (w . Scope Proxy) (\x -> if x == n' then B1 else F (fi x)) (F . fa))
+
+mapV :: (Scheme s -> Check s (Scheme s)) -> TVar s -> Check s ()
+mapV f v = undefined
+
+-- TODO Term (TVar s) -> Check (T s)
+infer :: Term (TVar s) -> TVar s -> Check s ()
 infer (Var v) p = unifyP v p
 infer (Lam b) p = do
   n <- ask
   px <- freshHole
   py <- freshHole
-  pf <- liftU $ fresh (Def (Nil $ Arr px py))
+  pf <- fresh (Def (Nil $ Arr px py))
   unifyP p pf
-  local (+ 1) $ infer (instantiate1 px b) py
+  infer (instantiate1 px b) py
 infer (App f x) py = do
   n <- ask
   px <- freshHole
-  pf <- liftU $ fresh (Def (Nil $ Arr px py))
+  pf <- fresh (Def (Nil $ Arr px py))
   infer f pf
   infer x px
 infer (Int n) p = undefined
 infer Unit p = undefined
 infer (Plus a b) p = do
-  pInt <- liftU $ fresh $ Def $ Nil TInt
+  pInt <- fresh $ Def $ Nil TInt
   unifyP pInt p
   infer a pInt
   infer b pInt
+infer (Let bind body) p = do
+  vbind <- local (+ 1) $ do
+    vbind <- freshHole
+    infer bind vbind
+    pure vbind
+  infer (instantiate1 vbind body) p
