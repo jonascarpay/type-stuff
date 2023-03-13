@@ -6,6 +6,7 @@ module Lib.UF where
 import Control.Monad.ST.Class
 import Control.Monad.State.Strict
 import Data.STRef
+import Data.Traversable (for)
 
 newtype Point s a = Point {unPoint :: STRef s (Link s a)}
   deriving (Eq)
@@ -63,27 +64,12 @@ capture ::
   (Traversable t, MonadST m) =>
   (a -> m (Maybe b)) ->
   (t (Point (World m) a) -> m (t (Either b (Point (World m) a))))
-capture f t = evalStateT (traverse go t) []
-  where
-    go ::
-      Point (World m) a ->
-      StateT
-        [(Point (World m) a, Either b (Point (World m) a))]
-        m
-        (Either b (Point (World m) a))
-    go p = do
-      (rep, a) <- repr p
-      gets (lookup rep) >>= \case
-        Nothing -> do
-          r <- maybe (Right rep) Left <$> lift (f a)
-          modify ((rep, r) :)
-          pure r
-        Just r -> pure r
+capture f t = captureM f $ for t
 
 {-# INLINE captureM #-}
 captureM ::
   forall m b a r.
-  (MonadST m) =>
+  MonadST m =>
   (a -> m (Maybe b)) ->
   ( (Point (World m) a -> m (Either b (Point (World m) a))) ->
     m r
