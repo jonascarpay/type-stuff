@@ -32,14 +32,15 @@ library
   import:          common-options
   hs-source-dirs:  src
   exposed-modules:
-    Lib
+    Lib.Bind
+    Lib.Free
+    Lib.Telescope
     Lib.UF
 
   build-depends:
     , containers
     , monad-st
     , mtl
-    , unify
 
 executable type-stuff-exe
   import:         common-options
