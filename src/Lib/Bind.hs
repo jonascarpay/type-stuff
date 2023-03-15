@@ -14,8 +14,8 @@ instance Applicative (Bind b) where
   Bind b <*> _ = Bind b
   _ <*> Bind b = Bind b
 
-pattern B1 :: Bind () a
-pattern B1 = Bind ()
+pattern Bind1 :: Bind () a
+pattern Bind1 = Bind ()
 
 type Bind1 = Bind ()
 

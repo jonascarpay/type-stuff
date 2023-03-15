@@ -1,5 +1,8 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Lib.UF where
 
@@ -32,9 +35,9 @@ repr p =
 fresh :: MonadST m => a -> m (Point (World m) a)
 fresh a = Point <$> liftST (newSTRef (Rep a))
 
-{-# INLINE unify #-}
-unify :: MonadST m => Point (World m) a -> Point (World m) a -> m ()
-unify pa pb = do
+{-# INLINE unifyRaw #-}
+unifyRaw :: MonadST m => Point (World m) a -> Point (World m) a -> m ()
+unifyRaw pa pb = do
   (ra, _) <- repr pa
   (rb, _) <- repr pb
   unless (ra == rb) $
@@ -92,3 +95,40 @@ captureM f k = do
           liftST $ writeSTRef ref ((rep, r) : ctx)
           pure r
         Just r -> pure r
+
+-- TODO rename
+{-# INLINE captureM' #-}
+captureM' ::
+  forall m b a r.
+  MonadST m =>
+  ( (Point (World m) a -> (Point (World m) a -> a -> m b) -> m b) ->
+    m r
+  ) ->
+  m r
+captureM' k = do
+  ctx <- liftST (newSTRef [])
+  k (mk ctx)
+  where
+    mk ::
+      STRef (World m) [(Point (World m) a, b)] ->
+      Point (World m) a ->
+      (Point (World m) a -> a -> m b) ->
+      m b
+    mk ref p def = do
+      (rep, a) <- repr p
+      ctx <- liftST (readSTRef ref)
+      case lookup rep ctx of
+        Nothing -> do
+          r <- def rep a
+          liftST $ writeSTRef ref ((rep, r) : ctx)
+          pure r
+        Just r -> pure r
+
+class Unify m a where
+  unify :: a -> a -> m a
+
+instance (Unify m a, MonadST m, s ~ World m) => Unify m (Point s a) where
+  unify a b = a <$ unifyWith unify a b
+
+instance Applicative m => Unify m () where
+  unify _ _ = pure ()
