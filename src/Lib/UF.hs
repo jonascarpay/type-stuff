@@ -10,6 +10,7 @@ import Control.Monad.ST.Class
 import Control.Monad.State.Strict
 import Data.STRef
 import Data.Traversable (for)
+import Data.Void (Void, absurd)
 
 newtype Point s a = Point {unPoint :: STRef s (Link s a)}
   deriving (Eq)
@@ -132,3 +133,6 @@ instance (Unify m a, MonadST m, s ~ World m) => Unify m (Point s a) where
 
 instance Applicative m => Unify m () where
   unify _ _ = pure ()
+
+instance Unify m Void where
+  unify a _ = absurd a

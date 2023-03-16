@@ -2,16 +2,18 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module HM where
 
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.ST
+import Control.Monad.ST.Class (MonadST (liftST))
 import Control.Monad.State.Strict
+import Data.Void
 import Lib.Bind (Bind (..), Bind1, unbind1)
 import Lib.Free
 import qualified Lib.Free as Free
@@ -37,31 +39,48 @@ data TypeF a
 type Type = Free TypeF
 
 newtype TVar s h = TVar (Point s (TVar' s h))
-  deriving (Unify (Check s h))
 
+instance Unify (UnifyBase s) h' => Unify (UnifyBase s) (TVar s h') where
+  unify (TVar a) (TVar b) = TVar <$> unify a b
+
+-- TODO TVLift :: TVar' s h -> TVar' s (Bind1 h)
 data TVar' s h = TVHole h | TVTy (TypeF (TVar s h))
 
-instance Unify (Check s h) a => Unify (Check s h) (TypeF a) where
+instance Unify (UnifyBase s) a => Unify (UnifyBase s) (TypeF a) where
   unify (Arr x1 y1) (Arr x2 y2) = Arr <$> unify x1 x2 <*> unify y1 y2
   unify TInt TInt = pure TInt
   unify TUnit TUnit = pure TUnit
   unify _ _ = throwError "Type check failure"
 
-instance Unify (Check s h) (TVar' s h) where
+instance Unify (UnifyBase s) h' => Unify (UnifyBase s) (TVar' s h') where
+  unify (TVHole a) (TVHole b) = TVHole <$> unify a b
   unify (TVHole _) a = pure a
   unify a (TVHole _) = pure a
   unify (TVTy a) (TVTy b) = TVTy <$> unify a b
 
-type Check s h = ReaderT h (ExceptT String (ST s))
+type UnifyBase s = ExceptT String (ST s)
+
+type Check s h = ReaderT h (UnifyBase s)
 
 -- TODO something cleverer than Int
-data Scheme s h
+data Scheme a
   = Scheme
       Int
-      (Type (Either Int (TVar s h)))
+      (Type (Either Int a))
+  deriving (Show)
 
-liftScheme :: TVar s h -> Scheme s h
+liftScheme :: a -> Scheme a
 liftScheme tv = Scheme 0 (pure (Right tv))
+
+liftScheme' :: forall s h. Scheme (TVar s h) -> ST s (Scheme (TVar1 s h))
+liftScheme' (Scheme n t) = captureM' $ \fRaw ->
+  let f :: TVar s h -> ST s (TVar1 s h)
+      f (TVar p) = fRaw p $ \tvv tv -> case tv of
+        TVHole h -> fmap TVar . fresh $ TVHole $ Free $ TVar tvv
+        TVTy t -> do
+          t' <- traverse f t
+          fmap TVar $ fresh $ TVTy t'
+   in Scheme n <$> (traverse . traverse) f t
 
 hole :: Check s h (TVar s h)
 hole = do
@@ -71,32 +90,40 @@ hole = do
 freshTy :: TypeF (TVar s h) -> Check s h (TVar s h)
 freshTy = fmap TVar . UF.fresh . TVTy
 
-assertTV :: TVar s h -> TypeF (TVar s h) -> Check s h ()
+assertTV :: Unify (UnifyBase s) h => TVar s h -> TypeF (TVar s h) -> Check s h ()
 assertTV ta ty = do
   tb <- freshTy ty
-  _ <- unify ta tb
+  _ <- lift $ unify ta tb
   pure ()
 
 type TVar1 s h = TVar s (Bind1 (TVar s h))
 
-type Close s h = StateT Int (Check s h)
+type Close s = StateT Int (UnifyBase s)
 
-close :: TVar s (Bind1 (TVar s h)) -> Check s h (Scheme s h)
+close :: forall s a. TVar s (Bind1 a) -> UnifyBase s (Scheme a)
 close tv = uncurry (flip Scheme) <$> runStateT go 0
   where
-    tick :: Close s h Int
+    tick :: Close s Int
     tick = state $ \n -> (n, n + 1)
-    go :: Close s h (Type (Either Int (TVar s h)))
-    go = captureM' $ \f ->
-      let f' :: TVar' s (Bind1 (TVar s h)) -> Close s h (Type (Either Int (TVar s h)))
-          f' (TVHole (Bind ())) = pure . Left <$> tick
-          f' (TVHole (Lib.Bind.Free h)) = pure $ pure $ pure h
-          f' (TVTy t) = _ t
-       in _
+    go :: Close s (Type (Either Int a))
+    go = captureM' $ \fRaw ->
+      -- TODO detect infinite types
+      let f :: TVar s (Bind1 a) -> Close s (Type (Either Int a))
+          f (TVar p) = fRaw p $ \_ tv -> case tv of
+            TVHole (Bind ()) -> pure . Left <$> tick
+            TVHole (Free h) -> pure (pure (Right h))
+            TVTy t -> Fix <$> traverse f t
+       in f tv
 
-infer :: (a -> Scheme s h) -> Term a -> Check s h (TVar s h)
+instance (Applicative m, Unify m a, Unify m b) => Unify m (Bind a b) where
+  unify (Bind a) (Bind b) = Bind <$> unify a b
+  unify (Bind _) a = pure a
+  unify a (Bind _) = pure a
+  unify (Free a) (Free b) = Free <$> unify a b
+
+infer :: Unify (UnifyBase s) h => (a -> ST s (Scheme (TVar s h))) -> Term a -> Check s h (TVar s h)
 infer ctx (Var a) = do
-  let Scheme n h = ctx a
+  Scheme n h <- liftST $ ctx a
   vars <- replicateM n hole
   Free.foldM
     (either (\ix -> pure (vars !! ix)) pure)
@@ -115,14 +142,24 @@ infer ctx (App f x) = do
   vy <- hole
   vf <- freshTy (Arr vx vy)
   vf' <- infer ctx f
-  _ <- unify vf vf'
+  _ <- lift $ unify vf vf'
   pure vy
 infer ctx (Let binding body) = do
   tbind <- withReaderT (const $ Bind ()) $ do
-    infer _ binding
-  tbind' <- close tbind
-  undefined
+    infer (ctx >=> liftScheme') binding
+  tbind' <- lift $ close tbind
+  infer (unbind1 (pure tbind') ctx) body
 infer ctx (Lam body) = do
   vx <- hole
-  vy <- infer (unbind1 (liftScheme vx) ctx) body
+  vy <- infer (unbind1 (pure $ liftScheme vx) ctx) body
   freshTy (Arr vx vy)
+
+infer' :: Term Void -> Type Char
+infer' t = either error unScheme $ runST $ runExceptT $ flip runReaderT (Bind ()) $ do
+  t' <- infer absurd t
+  lift $ close t'
+  where
+    unScheme :: Scheme Void -> Type Char
+    unScheme (Scheme _ a) = either (chars !!) absurd <$> a
+    chars :: String
+    chars = "abcdefghijklmnopqrstuvwxyz"

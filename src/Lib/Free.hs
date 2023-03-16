@@ -1,4 +1,7 @@
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Lib.Free where
 
@@ -6,8 +9,14 @@ import Control.Monad (ap)
 
 data Free f a
   = Pure a
-  | Free (f (Free f a))
+  | Fix (f (Free f a))
   deriving (Functor, Foldable, Traversable)
+
+deriving instance (Eq a, forall x. Eq x => Eq (f x)) => Eq (Free f a)
+
+instance (Show a, forall x. Show x => Show (f x)) => Show (Free f a) where
+  showsPrec p (Pure a) = showsPrec p a
+  showsPrec p (Fix f) = showsPrec p f
 
 instance Functor f => Applicative (Free f) where
   pure = Pure
@@ -15,10 +24,10 @@ instance Functor f => Applicative (Free f) where
 
 instance Functor f => Monad (Free f) where
   Pure a >>= fn = fn a
-  Free f >>= fn = Free ((>>= fn) <$> f)
+  Fix f >>= fn = Fix ((>>= fn) <$> f)
 
 foldM :: (Monad m, Traversable f) => (a -> m r) -> (f r -> m r) -> (Free f a -> m r)
 foldM fa ff = go
   where
     go (Pure a) = fa a
-    go (Free k) = traverse go k >>= ff
+    go (Fix k) = traverse go k >>= ff
