@@ -8,6 +8,7 @@ module Lib.UF where
 
 import Control.Monad.ST.Class
 import Control.Monad.State.Strict
+import Data.Function (on)
 import Data.STRef
 import Data.Traversable (for)
 import Data.Void (Void, absurd)
@@ -61,6 +62,9 @@ readPoint (Point p) = liftST (readSTRef p)
 {-# INLINE writePoint #-}
 writePoint :: MonadST m => Point (World m) a -> Link (World m) a -> m ()
 writePoint (Point p) l = liftST (writeSTRef p l)
+
+equivalent :: MonadST m => Point (World m) a -> Point (World m) a -> m Bool
+equivalent a b = on (==) fst <$> repr a <*> repr b
 
 {-# INLINE capture #-}
 capture ::
@@ -121,7 +125,7 @@ captureM' k = do
       case lookup rep ctx of
         Nothing -> do
           r <- def rep a
-          liftST $ writeSTRef ref ((rep, r) : ctx)
+          liftST $ modifySTRef ref ((rep, r) :)
           pure r
         Just r -> pure r
 

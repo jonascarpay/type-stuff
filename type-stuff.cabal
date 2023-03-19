@@ -32,6 +32,7 @@ library
   import:          common-options
   hs-source-dirs:  src
   exposed-modules:
+    HM
     Lib.Bind
     Lib.Free
     Lib.Telescope
@@ -41,6 +42,8 @@ library
     , containers
     , monad-st
     , mtl
+    , rebound
+    , transformers
 
 executable type-stuff-exe
   import:         common-options

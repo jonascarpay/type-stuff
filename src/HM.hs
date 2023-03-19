@@ -8,17 +8,25 @@
 
 module HM where
 
+import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.ST
 import Control.Monad.ST.Class (MonadST (liftST))
 import Control.Monad.State.Strict
+import Control.Monad.Trans.Maybe (runMaybeT)
+import Data.Either (fromRight)
+import Data.Foldable (toList)
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Data.Maybe (isJust)
+import Data.String (IsString (..))
 import Data.Void
-import Lib.Bind (Bind (..), Bind1, unbind1)
 import Lib.Free
 import qualified Lib.Free as Free
 import Lib.UF
 import qualified Lib.UF as UF
+import Rebound
 
 data Term a
   = Var a
@@ -28,10 +36,29 @@ data Term a
   | Int Int
   | Unit
   | Plus (Term a) (Term a)
+  | Pair (Term a) (Term a)
   deriving (Eq, Show, Functor, Foldable, Traversable)
+
+instance Num (Term a) where
+  fromInteger = Int . fromInteger
+  (+) = Plus
+  (*) = error "not implemented"
+  (-) = error "not implemented"
+  signum = error "not implemented"
+  abs = error "not implemented"
+
+instance IsString a => IsString (Term a) where
+  fromString = Var . fromString
+
+lam :: Eq a => a -> Term a -> Term a
+lam a = Lam . abstract1 a
+
+let' :: Eq a => a -> Term a -> Term a -> Term a
+let' name bound body = Let bound (abstract1 name body)
 
 data TypeF a
   = Arr a a
+  | TPair a a
   | TInt
   | TUnit
   deriving (Eq, Show, Functor, Foldable, Traversable)
@@ -50,6 +77,7 @@ instance Unify (UnifyBase s) a => Unify (UnifyBase s) (TypeF a) where
   unify (Arr x1 y1) (Arr x2 y2) = Arr <$> unify x1 x2 <*> unify y1 y2
   unify TInt TInt = pure TInt
   unify TUnit TUnit = pure TUnit
+  unify (TPair a1 b1) (TPair a2 b2) = TPair <$> unify a1 a2 <*> unify b1 b2
   unify _ _ = throwError "Type check failure"
 
 instance Unify (UnifyBase s) h' => Unify (UnifyBase s) (TVar' s h') where
@@ -110,15 +138,15 @@ close tv = uncurry (flip Scheme) <$> runStateT go 0
       -- TODO detect infinite types
       let f :: TVar s (Bind1 a) -> Close s (Type (Either Int a))
           f (TVar p) = fRaw p $ \_ tv -> case tv of
-            TVHole (Bind ()) -> pure . Left <$> tick
+            TVHole (Bound ()) -> pure . Left <$> tick
             TVHole (Free h) -> pure (pure (Right h))
             TVTy t -> Fix <$> traverse f t
        in f tv
 
 instance (Applicative m, Unify m a, Unify m b) => Unify m (Bind a b) where
-  unify (Bind a) (Bind b) = Bind <$> unify a b
-  unify (Bind _) a = pure a
-  unify a (Bind _) = pure a
+  unify (Bound a) (Bound b) = Bound <$> unify a b
+  unify (Bound _) a = pure a
+  unify a (Bound _) = pure a
   unify (Free a) (Free b) = Free <$> unify a b
 
 infer :: Unify (UnifyBase s) h => (a -> ST s (Scheme (TVar s h))) -> Term a -> Check s h (TVar s h)
@@ -139,13 +167,13 @@ infer ctx (Plus a b) = do
   freshTy TInt
 infer ctx (App f x) = do
   vx <- infer ctx x
+  vf <- infer ctx f
   vy <- hole
-  vf <- freshTy (Arr vx vy)
-  vf' <- infer ctx f
+  vf' <- freshTy (Arr vx vy)
   _ <- lift $ unify vf vf'
   pure vy
 infer ctx (Let binding body) = do
-  tbind <- withReaderT (const $ Bind ()) $ do
+  tbind <- withReaderT (const $ Bound ()) $ do
     infer (ctx >=> liftScheme') binding
   tbind' <- lift $ close tbind
   infer (unbind1 (pure tbind') ctx) body
@@ -153,13 +181,42 @@ infer ctx (Lam body) = do
   vx <- hole
   vy <- infer (unbind1 (pure $ liftScheme vx) ctx) body
   freshTy (Arr vx vy)
+infer ctx (Pair a b) = do
+  ta <- infer ctx a
+  tb <- infer ctx b
+  freshTy (TPair ta tb)
 
-infer' :: Term Void -> Type Char
-infer' t = either error unScheme $ runST $ runExceptT $ flip runReaderT (Bind ()) $ do
-  t' <- infer absurd t
-  lift $ close t'
+infer' :: Show a => Term a -> Type Char
+infer' term = either error unScheme $ runST $ runExceptT $ flip runReaderT (Bound ()) $ do
+  closedTerm <- either (\vs -> throwError $ "Unbound variables: " <> show (toList vs)) pure $ closed term
+  typ <- infer absurd closedTerm
+  lift $ close typ
   where
     unScheme :: Scheme Void -> Type Char
     unScheme (Scheme _ a) = either (chars !!) absurd <$> a
     chars :: String
     chars = "abcdefghijklmnopqrstuvwxyz"
+
+subtype :: Scheme Void -> Scheme Void -> Bool
+subtype (Scheme _ tsub) (Scheme _ tsup) = isJust $ subtype tsub tsup mempty
+  where
+    subtype :: (Ord a, Eq b) => Type a -> Type b -> Map a (Type b) -> Maybe (Map a (Type b))
+    subtype (Pure a) b subs = case Map.lookup a subs of
+      Nothing -> Just (Map.insert a b subs)
+      Just b' | b == b' -> Just subs
+      _ -> Nothing
+
+-- a -> b <: a -> a
+
+perms :: [a] -> [(a, a)]
+perms [] = []
+perms (x : xs) = go x xs xs
+  where
+    go :: a -> [a] -> [a] -> [(a, a)]
+    go a (b : bs) t = (a, b) : go a bs t
+    go _ [] [] = []
+    go _ [] (a : as) = go a as as
+
+-- s :: (a -> (b -> c)) -> ((d -> e) -> (f -> g))
+s :: (a -> b -> c) -> (a -> b) -> (a -> c)
+s x y z = x z (y z)

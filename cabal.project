@@ -8,3 +8,8 @@ source-repository-package
   type: git
   location: git@github.com:jonascarpay/unify.git
   tag: 80aec213b2e5dcab21a336f99d90589a6c01f683
+
+source-repository-package
+  type: git
+  location: git@github.com:jonascarpay/rebound.git
+  tag: 554c8f5e0c2c12217d36c0ebf020b236cbf431f9

@@ -4,6 +4,7 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/release-22.11";
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.unify.url = "github:jonascarpay/unify";
+  inputs.rebound.url = "github:jonascarpay/rebound";
 
   outputs = inputs:
     let
@@ -18,7 +19,7 @@
       };
       perSystem = system:
         let
-          pkgs = import inputs.nixpkgs { inherit system; overlays = [ inputs.unify.overlay overlay ]; };
+          pkgs = import inputs.nixpkgs { inherit system; overlays = [ inputs.unify.overlay inputs.rebound.overlay overlay ]; };
           hspkgs = pkgs.haskellPackages;
         in
         {
