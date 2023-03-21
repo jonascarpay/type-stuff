@@ -2,6 +2,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -14,8 +15,6 @@ import Control.Monad.Reader
 import Control.Monad.ST
 import Control.Monad.ST.Class (MonadST (liftST))
 import Control.Monad.State.Strict
-import Control.Monad.Trans.Maybe (runMaybeT)
-import Data.Either (fromRight)
 import Data.Foldable (toList)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -63,6 +62,13 @@ data TypeF a
   | TUnit
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
+matchTypeF :: (a -> b -> c) -> TypeF a -> TypeF b -> Maybe (TypeF c)
+matchTypeF f (Arr x1 y1) (Arr x2 y2) = pure $ Arr (f x1 x2) (f y1 y2)
+matchTypeF f (TPair x1 y1) (TPair x2 y2) = pure $ Arr (f x1 x2) (f y1 y2)
+matchTypeF _ TInt TInt = pure TInt
+matchTypeF _ TUnit TUnit = pure TUnit
+matchTypeF _ _ _ = Nothing
+
 type Type = Free TypeF
 
 newtype TVar s h = TVar (Point s (TVar' s h))
@@ -74,11 +80,7 @@ instance Unify (UnifyBase s) h' => Unify (UnifyBase s) (TVar s h') where
 data TVar' s h = TVHole h | TVTy (TypeF (TVar s h))
 
 instance Unify (UnifyBase s) a => Unify (UnifyBase s) (TypeF a) where
-  unify (Arr x1 y1) (Arr x2 y2) = Arr <$> unify x1 x2 <*> unify y1 y2
-  unify TInt TInt = pure TInt
-  unify TUnit TUnit = pure TUnit
-  unify (TPair a1 b1) (TPair a2 b2) = TPair <$> unify a1 a2 <*> unify b1 b2
-  unify _ _ = throwError "Type check failure"
+  unify a b = maybe (throwError "type check failure") sequence $ matchTypeF unify a b
 
 instance Unify (UnifyBase s) h' => Unify (UnifyBase s) (TVar' s h') where
   unify (TVHole a) (TVHole b) = TVHole <$> unify a b
@@ -198,15 +200,16 @@ infer' term = either error unScheme $ runST $ runExceptT $ flip runReaderT (Boun
     chars = "abcdefghijklmnopqrstuvwxyz"
 
 subtype :: Scheme Void -> Scheme Void -> Bool
-subtype (Scheme _ tsub) (Scheme _ tsup) = isJust $ subtype tsub tsup mempty
+subtype (Scheme _ tsub) (Scheme _ tsup) = isJust $ flip runStateT mempty $ go tsub tsup
   where
-    subtype :: (Ord a, Eq b) => Type a -> Type b -> Map a (Type b) -> Maybe (Map a (Type b))
-    subtype (Pure a) b subs = case Map.lookup a subs of
-      Nothing -> Just (Map.insert a b subs)
-      Just b' | b == b' -> Just subs
-      _ -> Nothing
-
--- a -> b <: a -> a
+    go :: (Ord a, Eq b) => Type a -> Type b -> StateT (Map a (Type b)) Maybe ()
+    go (Pure a) b =
+      gets (Map.lookup a) >>= \case
+        Nothing -> modify (Map.insert a b)
+        Just b' | b == b' -> pure ()
+        _ -> empty
+    go (Fix a) (Fix b) = maybe empty sequence_ $ matchTypeF go a b
+    go (Fix _) (Pure _) = empty
 
 perms :: [a] -> [(a, a)]
 perms [] = []
