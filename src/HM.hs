@@ -199,8 +199,8 @@ infer' term = either error unScheme $ runST $ runExceptT $ flip runReaderT (Boun
     chars :: String
     chars = "abcdefghijklmnopqrstuvwxyz"
 
-subtype :: Scheme Void -> Scheme Void -> Bool
-subtype (Scheme _ tsub) (Scheme _ tsup) = isJust $ flip runStateT mempty $ go tsub tsup
+subtype :: (Ord a, Eq b) => Type a -> Type b -> Bool
+subtype tsub tsup = isJust $ flip runStateT mempty $ go tsub tsup
   where
     go :: (Ord a, Eq b) => Type a -> Type b -> StateT (Map a (Type b)) Maybe ()
     go (Pure a) b =
@@ -220,6 +220,6 @@ perms (x : xs) = go x xs xs
     go _ [] [] = []
     go _ [] (a : as) = go a as as
 
--- s :: (a -> (b -> c)) -> ((d -> e) -> (f -> g))
-s :: (a -> b -> c) -> (a -> b) -> (a -> c)
-s x y z = x z (y z)
+-- -- s :: (a -> (b -> c)) -> ((d -> e) -> (f -> g))
+-- s :: (a -> b -> c) -> (a -> b) -> (a -> c)
+-- s x y z = x z (y z)

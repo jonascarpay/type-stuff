@@ -45,33 +45,17 @@ library
     , rebound
     , transformers
 
-executable type-stuff-exe
-  import:         common-options
-  hs-source-dirs: app
-  main-is:        Main.hs
-  build-depends:  type-stuff
-  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
-
 test-suite type-stuff-test
   import:         common-options
   type:           exitcode-stdio-1.0
   hs-source-dirs: test
   main-is:        Spec.hs
+  other-modules:  Spec.HM
   build-depends:
+    , containers
     , hspec
     , HUnit
     , QuickCheck
-    , type-stuff
-
-  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
-
-benchmark type-stuff-bench
-  import:         common-options
-  type:           exitcode-stdio-1.0
-  hs-source-dirs: bench
-  main-is:        Main.hs
-  build-depends:
-    , criterion
     , type-stuff
 
   ghc-options:    -threaded -rtsopts -with-rtsopts=-N
