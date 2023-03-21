@@ -1,14 +1,19 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Spec.HM where
 
 import Control.Applicative
+import qualified Control.Exception as E
+import Control.Monad
 import Data.Foldable (toList)
 import HM
 import Lib.Free
+import Test.HUnit
+import Test.HUnit.Lang (FailureReason (ExpectedButGot), HUnitFailure (HUnitFailure))
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
@@ -34,14 +39,30 @@ instance Arbitrary1 TypeF where
   liftShrink _ TInt = []
   liftShrink _ TUnit = []
 
+checks :: Term String -> Type String -> Assertion
+checks term typ = do
+  typ' <- either assertFailure pure $ inferT term
+  unless (subtype typ' typ) . E.throwIO $
+    HUnitFailure Nothing $
+      ExpectedButGot Nothing (show typ) (show typ')
+
 spec :: Spec
 spec = do
-  describe "Every type is a subtype of..." $ do
-    prop "...itself" $ \(s :: Type Int) -> subtype s s
-    prop "...itself with randomly remapped variables" $ \(s :: Type Int) (Blind (f :: Int -> Int)) -> subtype s (f <$> s)
-    prop "...itself with randomly instantiated variables" $ \(s :: Type Int) (Blind (f :: Int -> Type Int)) -> subtype s (s >>= f)
-
--- describe "Unit tests" $ do
---   it "I : a -> a" _
-
--- it "S : (a -> b -> c) -> (a -> b) -> (a -> c)" _
+  describe "Subtyping" $ do
+    prop "Every type t <: t" $ \(s :: Type Int) -> subtype s s
+    prop "Every type t <: t with remapped variables" $ \(s :: Type Int) (Blind (f :: Int -> Int)) -> subtype s (f <$> s)
+    prop "Every type t <: t with randomly instantiated variables" $ \(s :: Type Int) (Blind (f :: Int -> Type Int)) -> subtype s (s >>= f)
+    prop "(∀ x. x) is a subtype of every type" $ \(s :: Type Int) -> subtype (pure ()) s
+  describe "SKI Combinators" $ do
+    it "I; λ x. x : a -> a" $
+      checks
+        (λ "x" "x")
+        ("a" --> "a")
+    it "K; λ x y. x : a -> b -> a" $
+      checks
+        (λ "x" $ λ "y" "x")
+        ("a" --> "b" --> "a")
+    it "S; λ x y z. x z (y z) : (a -> b -> c) -> (a -> b) -> (a -> c)" $
+      checks
+        (λ "x" $ λ "y" $ λ "z" $ "x" @ "z" @ ("y" @ "z"))
+        (("a" --> "b" --> "c") --> ("a" --> "b") --> ("a" --> "c"))

@@ -6,11 +6,15 @@
 module Lib.Free where
 
 import Control.Monad (ap)
+import Data.String (IsString (..))
 
 data Free f a
   = Pure a
   | Fix (f (Free f a))
   deriving (Functor, Foldable, Traversable)
+
+instance IsString a => IsString (Free f a) where
+  fromString = Pure . fromString
 
 deriving instance (Eq a, forall x. Eq x => Eq (f x)) => Eq (Free f a)
 

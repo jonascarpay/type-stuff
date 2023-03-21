@@ -49,8 +49,14 @@ instance Num (Term a) where
 instance IsString a => IsString (Term a) where
   fromString = Var . fromString
 
-lam :: Eq a => a -> Term a -> Term a
+lam, λ :: Eq a => a -> Term a -> Term a
 lam a = Lam . abstract1 a
+λ = lam
+
+infixl 9 @
+
+(@) :: Term a -> Term a -> Term a
+(@) = App
 
 let' :: Eq a => a -> Term a -> Term a -> Term a
 let' name bound body = Let bound (abstract1 name body)
@@ -187,6 +193,13 @@ infer ctx (Pair a b) = do
   tb <- infer ctx b
   freshTy (TPair ta tb)
 
+inferT :: Show a => Term a -> Either String (Type Int)
+inferT term = runST $ runExceptT $ flip runReaderT (Bound ()) $ do
+  closedTerm :: Term Void <- either (\vs -> throwError $ "Unbound variables: " <> show (toList vs)) pure $ closed term
+  typ <- infer absurd closedTerm
+  Scheme _ t <- lift $ close typ
+  pure $ either id absurd <$> t
+
 infer' :: Show a => Term a -> Type Char
 infer' term = either error unScheme $ runST $ runExceptT $ flip runReaderT (Bound ()) $ do
   closedTerm <- either (\vs -> throwError $ "Unbound variables: " <> show (toList vs)) pure $ closed term
@@ -210,15 +223,7 @@ subtype tsub tsup = isJust $ flip runStateT mempty $ go tsub tsup
     go (Fix a) (Fix b) = maybe empty sequence_ $ matchTypeF go a b
     go (Fix _) (Pure _) = empty
 
-perms :: [a] -> [(a, a)]
-perms [] = []
-perms (x : xs) = go x xs xs
-  where
-    go :: a -> [a] -> [a] -> [(a, a)]
-    go a (b : bs) t = (a, b) : go a bs t
-    go _ [] [] = []
-    go _ [] (a : as) = go a as as
+infixr 9 -->
 
--- -- s :: (a -> (b -> c)) -> ((d -> e) -> (f -> g))
--- s :: (a -> b -> c) -> (a -> b) -> (a -> c)
--- s x y z = x z (y z)
+(-->) :: Type a -> Type a -> Type a
+(-->) a b = Fix (Arr a b)
