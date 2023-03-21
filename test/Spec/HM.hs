@@ -46,13 +46,18 @@ checks term typ = do
     HUnitFailure Nothing $
       ExpectedButGot Nothing (show typ) (show typ')
 
+typeCheckFailure :: Term String -> Assertion
+typeCheckFailure term = case inferT term of
+  Left _ -> pure ()
+  Right typ -> assertFailure $ "Unexpected success: " <> show typ
+
 spec :: Spec
 spec = do
   describe "Subtyping" $ do
     prop "Every type t <: t" $ \(s :: Type Int) -> subtype s s
     prop "Every type t <: t with remapped variables" $ \(s :: Type Int) (Blind (f :: Int -> Int)) -> subtype s (f <$> s)
     prop "Every type t <: t with randomly instantiated variables" $ \(s :: Type Int) (Blind (f :: Int -> Type Int)) -> subtype s (s >>= f)
-    prop "(∀ x. x) is a subtype of every type" $ \(s :: Type Int) -> subtype (pure ()) s
+    prop "(∀ x. x) <: every type" $ \(s :: Type Int) -> subtype (pure ()) s
   describe "SKI Combinators" $ do
     it "I; λ x. x : a -> a" $
       checks
@@ -66,3 +71,11 @@ spec = do
       checks
         (λ "x" $ λ "y" $ λ "z" $ "x" @ "z" @ ("y" @ "z"))
         (("a" --> "b" --> "c") --> ("a" --> "b") --> ("a" --> "c"))
+  describe "Type check failures" $ do
+    it "() ()" $ typeCheckFailure (Unit @ Unit)
+    it "λ f. f f" . typeCheckFailure $
+      λ "f" ("f" @ "f")
+    it "Y = λ f. (λ x. f (x x)) (λ x. f (x x))" . typeCheckFailure $
+      λ "f" $
+        λ "x" ("f" @ ("x" @ "x"))
+          @ λ "x" ("f" @ ("x" @ "x"))
