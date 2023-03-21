@@ -1,4 +1,7 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -19,61 +22,23 @@ import Data.Foldable (toList)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (isJust)
-import Data.String (IsString (..))
 import Data.Void
+import GHC.Generics (Generic1)
+import HM.Term
 import Lib.Free
 import qualified Lib.Free as Free
+import Lib.Match
 import Lib.UF
 import qualified Lib.UF as UF
 import Rebound
-
-data Term a
-  = Var a
-  | Lam (Term (Bind1 a))
-  | App (Term a) (Term a)
-  | Let (Term a) (Term (Bind1 a))
-  | Int Int
-  | Unit
-  | Plus (Term a) (Term a)
-  | Pair (Term a) (Term a)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
-
-instance Num (Term a) where
-  fromInteger = Int . fromInteger
-  (+) = Plus
-  (*) = error "not implemented"
-  (-) = error "not implemented"
-  signum = error "not implemented"
-  abs = error "not implemented"
-
-instance IsString a => IsString (Term a) where
-  fromString = Var . fromString
-
-lam, λ :: Eq a => a -> Term a -> Term a
-lam a = Lam . abstract1 a
-λ = lam
-
-infixl 9 @
-
-(@) :: Term a -> Term a -> Term a
-(@) = App
-
-let' :: Eq a => a -> Term a -> Term a -> Term a
-let' name bound body = Let bound (abstract1 name body)
 
 data TypeF a
   = Arr a a
   | TPair a a
   | TInt
   | TUnit
-  deriving (Eq, Show, Functor, Foldable, Traversable)
-
-matchTypeF :: (a -> b -> c) -> TypeF a -> TypeF b -> Maybe (TypeF c)
-matchTypeF f (Arr x1 y1) (Arr x2 y2) = pure $ Arr (f x1 x2) (f y1 y2)
-matchTypeF f (TPair x1 y1) (TPair x2 y2) = pure $ Arr (f x1 x2) (f y1 y2)
-matchTypeF _ TInt TInt = pure TInt
-matchTypeF _ TUnit TUnit = pure TUnit
-matchTypeF _ _ _ = Nothing
+  deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic1)
+  deriving anyclass (Match)
 
 type Type = Free TypeF
 
@@ -86,7 +51,7 @@ instance Unify (UnifyBase s) h' => Unify (UnifyBase s) (TVar s h') where
 data TVar' s h = TVHole h | TVTy (TypeF (TVar s h))
 
 instance Unify (UnifyBase s) a => Unify (UnifyBase s) (TypeF a) where
-  unify a b = maybe (throwError "type check failure") sequence $ matchTypeF unify a b
+  unify a b = maybe (throwError "type check failure") sequence $ match unify a b
 
 instance Unify (UnifyBase s) h' => Unify (UnifyBase s) (TVar' s h') where
   unify (TVHole a) (TVHole b) = TVHole <$> unify a b
@@ -112,7 +77,7 @@ liftScheme' :: forall s h. Scheme (TVar s h) -> ST s (Scheme (TVar1 s h))
 liftScheme' (Scheme n t) = captureM' $ \fRaw ->
   let f :: TVar s h -> ST s (TVar1 s h)
       f (TVar p) = fRaw p $ \tvv tv -> case tv of
-        TVHole h -> fmap TVar . fresh $ TVHole $ Free $ TVar tvv
+        TVHole _ -> fmap TVar . fresh $ TVHole $ Free $ TVar tvv
         TVTy t -> do
           t' <- traverse f t
           fmap TVar $ fresh $ TVTy t'
@@ -220,10 +185,16 @@ subtype tsub tsup = isJust $ flip runStateT mempty $ go tsub tsup
         Nothing -> modify (Map.insert a b)
         Just b' | b == b' -> pure ()
         _ -> empty
-    go (Fix a) (Fix b) = maybe empty sequence_ $ matchTypeF go a b
+    go (Fix a) (Fix b) = maybe empty sequence_ $ match go a b
     go (Fix _) (Pure _) = empty
 
-infixr 9 -->
+infixr 2 -->
 
 (-->) :: Type a -> Type a -> Type a
 (-->) a b = Fix (Arr a b)
+
+tup :: Type a -> Type a -> Type a
+tup a b = Fix (TPair a b)
+
+k :: r -> (r -> a) -> a
+k r f = f r

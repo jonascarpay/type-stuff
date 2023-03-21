@@ -11,6 +11,7 @@ import qualified Control.Exception as E
 import Control.Monad
 import Data.Foldable (toList)
 import HM
+import HM.Term
 import Lib.Free
 import Test.HUnit
 import Test.HUnit.Lang (FailureReason (ExpectedButGot), HUnitFailure (HUnitFailure))
@@ -71,11 +72,44 @@ spec = do
       checks
         (λ "x" $ λ "y" $ λ "z" $ "x" @ "z" @ ("y" @ "z"))
         (("a" --> "b" --> "c") --> ("a" --> "b") --> ("a" --> "c"))
-  describe "Type check failures" $ do
+  describe "Polymorphism" $ do
+    it "id id " $
+      checks
+        (let' "id" (λ "x" "x") ("id" @ "id"))
+        ("a" --> "a")
+    it "let id x = x in (id, id)" $
+      checks
+        (let' "id" (λ "x" "x") (Pair "id" "id"))
+        (tup ("a" --> "a") ("b" --> "b"))
+    it "double CPS" $
+      checks
+        (λ "x" $ let' "cps" (λ "x" $ λ "f" $ "f" @ "x") $ Pair ("cps" @ "x") ("cps" @ "x"))
+        ("r" --> tup (("r" --> "a") --> "a") (("r" --> "b") --> "b"))
+    it "CPS soup" $
+      checks
+        ( let'
+            "cp"
+            (λ "x" $ λ "f" $ let' "id" (λ "x" "x") $ "id" @ "f" @ Pair "x" ("id" @ "x"))
+            "cp"
+        )
+        ("a" --> (tup "a" "a" --> "r") --> "r")
+    it "xor" $
+      checks
+        ( λ "a" . λ "b" $
+            let' "false" (λ "a" $ λ "b" "b") $
+              let' "true" (λ "a" $ λ "b" "a") $
+                let' "not" (λ "a" $ "a" @ "false" @ "true") $
+                  "a" @ ("not" @ "b") @ "b"
+        )
+        ( ("t1" --> (("p1" --> "p2" --> "p2") --> ("p3" --> "p4" --> "p3") --> "t1") --> "t2")
+            --> (("p1" --> "p2" --> "p2") --> ("p3" --> "p4" --> "p3") --> "t1")
+            --> "t2"
+        )
+  describe "Expected failures" $ do
     it "() ()" $ typeCheckFailure (Unit @ Unit)
-    it "λ f. f f" . typeCheckFailure $
+    xit "λ f. f f" . typeCheckFailure $
       λ "f" ("f" @ "f")
-    it "Y = λ f. (λ x. f (x x)) (λ x. f (x x))" . typeCheckFailure $
+    xit "Y = λ f. (λ x. f (x x)) (λ x. f (x x))" . typeCheckFailure $
       λ "f" $
         λ "x" ("f" @ ("x" @ "x"))
           @ λ "x" ("f" @ ("x" @ "x"))

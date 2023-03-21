@@ -33,8 +33,11 @@ library
   hs-source-dirs:  src
   exposed-modules:
     HM
+    HM.Term
     Lib.Bind
     Lib.Free
+    Lib.Match
+    Lib.RVar
     Lib.Telescope
     Lib.UF
 
