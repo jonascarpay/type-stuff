@@ -13,7 +13,7 @@ import Control.Applicative
 import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.ST
-import Control.Monad.ST.Class (MonadST (liftST))
+import Control.Monad.ST.Class (MonadST (World, liftST))
 import Control.Monad.State.Strict
 import Data.Foldable (toList)
 import Data.Map (Map)
@@ -128,17 +128,16 @@ assertTV ta ty = do
 
 type TVar1 s h = TVar s (Bind1 (TVar s h))
 
-type Close s = StateT Int (UnifyBase s)
-
-close :: forall s a. TVar s (Bind1 a) -> UnifyBase s (Scheme a)
+{-# SPECIALIZE close :: TVar s (Bind1 a) -> Check s h (Scheme a) #-}
+close :: forall m a. MonadST m => TVar (World m) (Bind1 a) -> m (Scheme a)
 close tv = uncurry (flip Scheme) <$> runStateT go 0
   where
-    tick :: Close s Int
+    tick :: StateT Int m Int
     tick = state $ \n -> (n, n + 1)
-    go :: Close s (Type (Either Int a))
+    go :: StateT Int m (Type (Either Int a))
     go = captureM' $ \fRaw ->
       -- TODO detect infinite types
-      let f :: TVar s (Bind1 a) -> Close s (Type (Either Int a))
+      let f :: TVar (World m) (Bind1 a) -> StateT Int m (Type (Either Int a))
           f (TVar p) = fRaw p $ \_ tv -> case tv of
             TVHole (Bound ()) -> pure . Left <$> tick
             TVHole (Free h) -> pure (pure (Right h))
