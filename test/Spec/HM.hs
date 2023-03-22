@@ -63,28 +63,28 @@ spec = do
     it "I; λ x. x : a -> a" $
       checks
         (λ "x" "x")
-        ("a" --> "a")
+        ("a" ~> "a")
     it "K; λ x y. x : a -> b -> a" $
       checks
         (λ "x" $ λ "y" "x")
-        ("a" --> "b" --> "a")
+        ("a" ~> "b" ~> "a")
     it "S; λ x y z. x z (y z) : (a -> b -> c) -> (a -> b) -> (a -> c)" $
       checks
         (λ "x" $ λ "y" $ λ "z" $ "x" @ "z" @ ("y" @ "z"))
-        (("a" --> "b" --> "c") --> ("a" --> "b") --> ("a" --> "c"))
+        (("a" ~> "b" ~> "c") ~> ("a" ~> "b") ~> ("a" ~> "c"))
   describe "Polymorphism" $ do
     it "id id " $
       checks
         (let' "id" (λ "x" "x") ("id" @ "id"))
-        ("a" --> "a")
+        ("a" ~> "a")
     it "let id x = x in (id, id)" $
       checks
         (let' "id" (λ "x" "x") (Pair "id" "id"))
-        (tup ("a" --> "a") ("b" --> "b"))
+        (tup ("a" ~> "a") ("b" ~> "b"))
     it "double CPS" $
       checks
         (λ "x" $ let' "cps" (λ "x" $ λ "f" $ "f" @ "x") $ Pair ("cps" @ "x") ("cps" @ "x"))
-        ("r" --> tup (("r" --> "a") --> "a") (("r" --> "b") --> "b"))
+        ("r" ~> tup (("r" ~> "a") ~> "a") (("r" ~> "b") ~> "b"))
     it "CPS soup" $
       checks
         ( let'
@@ -92,7 +92,7 @@ spec = do
             (λ "x" $ λ "f" $ let' "id" (λ "x" "x") $ "id" @ "f" @ Pair "x" ("id" @ "x"))
             "cp"
         )
-        ("a" --> (tup "a" "a" --> "r") --> "r")
+        ("a" ~> (tup "a" "a" ~> "r") ~> "r")
     it "xor" $
       checks
         ( λ "a" . λ "b" $
@@ -101,9 +101,9 @@ spec = do
                 let' "not" (λ "a" $ "a" @ "false" @ "true") $
                   "a" @ ("not" @ "b") @ "b"
         )
-        ( ("t1" --> (("p1" --> "p2" --> "p2") --> ("p3" --> "p4" --> "p3") --> "t1") --> "t2")
-            --> (("p1" --> "p2" --> "p2") --> ("p3" --> "p4" --> "p3") --> "t1")
-            --> "t2"
+        ( ("t1" ~> (("p1" ~> "p2" ~> "p2") ~> ("p3" ~> "p4" ~> "p3") ~> "t1") ~> "t2")
+            ~> (("p1" ~> "p2" ~> "p2") ~> ("p3" ~> "p4" ~> "p3") ~> "t1")
+            ~> "t2"
         )
   describe "Expected failures" $ do
     it "() ()" $ typeCheckFailure (Unit @ Unit)

@@ -188,10 +188,10 @@ subtype tsub tsup = isJust $ flip runStateT mempty $ go tsub tsup
     go (Fix a) (Fix b) = maybe empty sequence_ $ match go a b
     go (Fix _) (Pure _) = empty
 
-infixr 2 -->
+infixr 2 ~>
 
-(-->) :: Type a -> Type a -> Type a
-(-->) a b = Fix (Arr a b)
+(~>) :: Type a -> Type a -> Type a
+(~>) a b = Fix (Arr a b)
 
 tup :: Type a -> Type a -> Type a
 tup a b = Fix (TPair a b)
