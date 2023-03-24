@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module HM.Check where
+module HM.Check (inferT) where
 
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -19,7 +19,7 @@ import Lib.UF
 import qualified Lib.UF as UF
 import Rebound
 
-newtype TVar s h = TVar {unTVar :: Point s (TVar' s h)}
+newtype TVar s h = TVar {_unTVar :: Point s (TVar' s h)}
   deriving (Eq)
 
 data TVar' s h = TVHole h | TVTy (TypeF (TVar s h))
@@ -30,26 +30,6 @@ type Check s h =
   ReaderT
     (h, TVar s h -> TVar s h -> UnifyBase s ())
     (UnifyBase s)
-
--- TODO something cleverer than Int
-data Scheme a
-  = Scheme
-      Int
-      (Type (Either Int a))
-  deriving (Show)
-
-liftScheme :: a -> Scheme a
-liftScheme tv = Scheme 0 (pure (Right tv))
-
-liftScheme' :: forall s h. Scheme (TVar s h) -> ST s (Scheme (TVar1 s h))
-liftScheme' (Scheme n t) = captureM' $ \fRaw ->
-  let f :: TVar s h -> ST s (TVar1 s h)
-      f (TVar p) = fRaw p $ \tvv tv -> case tv of
-        TVHole _ -> fmap TVar . fresh $ TVHole $ Free $ TVar tvv
-        TVTy t -> do
-          t' <- traverse f t
-          fmap TVar $ fresh $ TVTy t'
-   in Scheme n <$> (traverse . traverse) f t
 
 hole :: Check s h (TVar s h)
 hole = do
@@ -73,7 +53,7 @@ unifyTVar va vb = do
 type TVar1 s h = TVar s (Bind1 (TVar s h))
 
 close :: forall s a. TVar s (Bind1 a) -> UnifyBase s (Scheme a)
-close tv = uncurry (flip Scheme) <$> runStateT go 0
+close root = uncurry (flip Scheme) <$> runStateT go 0
   where
     tick :: StateT Int (UnifyBase s) Int
     tick = state $ \n -> (n, n + 1)
@@ -86,7 +66,7 @@ close tv = uncurry (flip Scheme) <$> runStateT go 0
               TVHole (Bound ()) -> pure . Left <$> tick
               TVHole (Free h) -> pure (pure (Right h))
               TVTy t -> Fix <$> traverse (f $ rep : prev) t
-       in f [] tv
+       in f [] root
 
 unifyTVarBase :: forall s h. (h -> h -> UnifyBase s h) -> TVar s h -> TVar s h -> UnifyBase s ()
 unifyTVarBase fh (TVar va) (TVar vb) = unifyRec (throwError "Infinite type") f va vb
@@ -129,7 +109,7 @@ infer ctx (Let binding body) = do
   infer (unbind1 (pure tbind') ctx) body
 infer ctx (Lam body) = do
   vx <- hole
-  vy <- infer (unbind1 (pure $ liftScheme vx) ctx) body
+  vy <- infer (unbind1 (pure $ singletonScheme vx) ctx) body
   freshTy (Arr vx vy)
 infer ctx (Pair a b) = do
   ta <- infer ctx a
@@ -142,9 +122,15 @@ unifyBindTVar _ (Free a) Bound1 = pure $ Free a
 unifyBindTVar _ Bound1 (Free b) = pure $ Free b
 unifyBindTVar _ Bound1 Bound1 = pure Bound1
 
--- \f. f f
--- (f : v0) -> f f
--- (f : v0) -> ((f : v0) (f : v0) : v1)
+liftScheme' :: forall s h. Scheme (TVar s h) -> ST s (Scheme (TVar1 s h))
+liftScheme' (Scheme n ty) = captureM' $ \fRaw ->
+  let f :: TVar s h -> ST s (TVar1 s h)
+      f (TVar p) = fRaw p $ \tvv tv -> case tv of
+        TVHole _ -> fmap TVar . fresh $ TVHole $ Free $ TVar tvv
+        TVTy t -> do
+          t' <- traverse f t
+          fmap TVar $ fresh $ TVTy t'
+   in Scheme n <$> (traverse . traverse) f ty
 
 inferT :: Show a => Term a -> Either String (Type Int)
 inferT term = runST $ runExceptT $ runCheckBase $ do

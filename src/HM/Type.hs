@@ -47,3 +47,13 @@ subtype tsub tsup = isJust $ flip runStateT mempty $ go tsub tsup
         _ -> empty
     go (Fix a) (Fix b) = maybe empty sequence_ $ match go a b
     go (Fix _) (Pure _) = empty
+
+data Scheme a
+  = Scheme
+      Int
+      (Type (Either Int a))
+  deriving (Show)
+
+-- Technically, Scheme is a Monad, and this is be return/pure
+singletonScheme :: a -> Scheme a
+singletonScheme tv = Scheme 0 (pure (Right tv))

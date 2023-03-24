@@ -3,7 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module HM.FastCheck (inferT, Scheme (..)) where
+module HM.FastCheck (inferT) where
 
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -34,12 +34,6 @@ type Check s =
   ReaderT
     Depth
     (UnifyBase s)
-
-data Scheme a
-  = Scheme
-      Int
-      (Type (Either Int a))
-  deriving (Show)
 
 hole :: Check s (TVar s)
 hole = do
@@ -126,9 +120,6 @@ infer ctx (Pair a b) = do
   ta <- infer ctx a
   tb <- infer ctx b
   freshTy (TPair ta tb)
-
-singletonScheme :: a -> Scheme a
-singletonScheme tv = Scheme 0 (pure (Right tv))
 
 inferT :: Show a => Term a -> Either String (Type Int)
 inferT term = runST $ runExceptT $ runCheckBase $ do
