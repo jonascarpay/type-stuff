@@ -58,7 +58,7 @@ close root = uncurry (flip Scheme) <$> runStateT go 0
     tick :: StateT Int (UnifyBase s) Int
     tick = state $ \n -> (n, n + 1)
     go :: StateT Int (UnifyBase s) (Type (Either Int a))
-    go = captureM' $ \fRaw ->
+    go = capture $ \fRaw ->
       let f :: [Point s (TVar' s (Bind1 a))] -> TVar s (Bind1 a) -> StateT Int (UnifyBase s) (Type (Either Int a))
           f prev (TVar p) = fRaw p $ \rep tv ->
             case tv of
@@ -123,7 +123,7 @@ unifyBindTVar _ Bound1 (Free b) = pure $ Free b
 unifyBindTVar _ Bound1 Bound1 = pure Bound1
 
 liftScheme' :: forall s h. Scheme (TVar s h) -> ST s (Scheme (TVar1 s h))
-liftScheme' (Scheme n ty) = captureM' $ \fRaw ->
+liftScheme' (Scheme n ty) = capture $ \fRaw ->
   let f :: TVar s h -> ST s (TVar1 s h)
       f (TVar p) = fRaw p $ \tvv tv -> case tv of
         TVHole _ -> fmap TVar . fresh $ TVHole $ Free $ TVar tvv

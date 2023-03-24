@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module HM.Term where
 
@@ -39,3 +40,15 @@ infixl 9 @
 
 let' :: Eq a => a -> Term a -> Term a -> Term a
 let' name bound body = Let bound (abstract1 name body)
+
+soup :: Term String
+soup =
+  let'
+    "outer"
+    ( λ "a" $
+        let'
+          "inner"
+          (λ "x" $ Pair "x" "a")
+          (Pair ("inner" @ "a") ("inner" @ 0))
+    )
+    "outer"

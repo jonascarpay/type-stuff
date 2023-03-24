@@ -98,6 +98,15 @@ mkSpec infer = do
             ~> (("p1" ~> "p2" ~> "p2") ~> ("p3" ~> "p4" ~> "p3") ~> "t1")
             ~> "t2"
         )
+    it "type variable scoping" $
+      checks
+        ( λ "a" $
+            let'
+              "withA"
+              (λ "x" $ Pair "x" "a")
+              ("withA" @ 0)
+        )
+        ("a" ~> tup (Fix TInt) "a")
   describe "Expected failures" $ do
     it "() ()" $ typeError (Unit @ Unit)
     it "λ f. f f" . typeError $
@@ -106,11 +115,26 @@ mkSpec infer = do
       λ "f" $
         λ "x" ("f" @ ("x" @ "x"))
           @ λ "x" ("f" @ ("x" @ "x"))
+  it "explosion" . infers
+    $ let'
+      "double"
+      (λ "x" $ Pair "x" "x")
+    $ let' "d1" ("double" @ "double")
+    $ let' "d2" ("double" @ "d1")
+    $ let' "d3" ("double" @ "d2")
+    $ let' "d4" ("double" @ "d3")
+    $ let' "d5" ("double" @ "d4")
+    $ let' "d6" ("double" @ "d5")
+    $ let' "d7" ("double" @ "d6")
+    $ let' "d8" ("double" @ "d7")
+    $ let' "d9" ("double" @ "d8")
+    $ let' "d10" ("double" @ "d9")
+    $ ("double" @ "d10")
   where
     checks :: Term String -> Type String -> Assertion
     checks term typ = do
       typ' <- either assertFailure pure $ infer term
-      unless (subtype typ' typ) . E.throwIO $
+      unless (subtype typ' typ && subtype typ typ') . E.throwIO $
         HUnitFailure Nothing $
           ExpectedButGot Nothing (show typ) (show typ')
 
@@ -118,3 +142,6 @@ mkSpec infer = do
     typeError term = case infer term of
       Left _ -> pure ()
       Right typ -> assertFailure $ "Unexpected success: " <> show typ
+
+    infers :: Term String -> Assertion
+    infers term = either assertFailure (const $ pure ()) $ infer term

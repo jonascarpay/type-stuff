@@ -5,23 +5,33 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Lib.UF where
+module Lib.UF
+  ( fresh,
+    Point,
+    capture,
+    unifyRec,
+    unifyWith,
+    unifyRaw,
+    descriptor,
+    equivalent,
+  )
+where
 
 import Control.Monad.ST.Class
 import Control.Monad.State.Strict
 import Data.Function (on)
 import Data.STRef
-import Data.Traversable (for)
 
-newtype Point s a = Point {unPoint :: STRef s (Link s a)}
+-- TODO assign Ints to every class to make capture and unifyRec more efficient
+newtype Point s a = Point {_unPoint :: STRef s (Link s a)}
   deriving (Eq)
 
 data Link s a
   = Rep a
   | Link (Point s a)
 
-desc :: MonadST m => Point (World m) a -> m a
-desc = fmap snd . repr
+descriptor :: MonadST m => Point (World m) a -> m a
+descriptor = fmap snd . repr
 
 {-# INLINE repr #-}
 repr :: MonadST m => Point (World m) a -> m (Point (World m) a, a)
@@ -66,51 +76,16 @@ writePoint (Point p) l = liftST (writeSTRef p l)
 equivalent :: MonadST m => Point (World m) a -> Point (World m) a -> m Bool
 equivalent a b = on (==) fst <$> repr a <*> repr b
 
+-- TODO rename
 {-# INLINE capture #-}
 capture ::
-  forall t m b a.
-  (Traversable t, MonadST m) =>
-  (a -> m (Maybe b)) ->
-  (t (Point (World m) a) -> m (t (Either b (Point (World m) a))))
-capture f t = captureM f $ for t
-
-{-# INLINE captureM #-}
-captureM ::
-  forall m b a r.
-  MonadST m =>
-  (a -> m (Maybe b)) ->
-  ( (Point (World m) a -> m (Either b (Point (World m) a))) ->
-    m r
-  ) ->
-  m r
-captureM f k = do
-  ctx <- liftST (newSTRef [])
-  k (mk ctx)
-  where
-    mk ::
-      STRef (World m) [(Point (World m) a, Either b (Point (World m) a))] ->
-      Point (World m) a ->
-      m (Either b (Point (World m) a))
-    mk ref p = do
-      (rep, a) <- repr p
-      ctx <- liftST (readSTRef ref)
-      case lookup rep ctx of
-        Nothing -> do
-          r <- maybe (Right rep) Left <$> f a
-          liftST $ writeSTRef ref ((rep, r) : ctx)
-          pure r
-        Just r -> pure r
-
--- TODO rename
-{-# INLINE captureM' #-}
-captureM' ::
   forall m b a r.
   MonadST m =>
   ( (Point (World m) a -> (Point (World m) a -> a -> m b) -> m b) ->
     m r
   ) ->
   m r
-captureM' k = do
+capture k = do
   ctx <- liftST (newSTRef [])
   k (mk ctx)
   where

@@ -6,8 +6,8 @@
 module HM.FastCheck (inferT) where
 
 import Control.Monad.Except
-import Control.Monad.Reader
 import Control.Monad.ST
+import Control.Monad.ST.Class (MonadST, World)
 import Control.Monad.State.Strict
 import Data.Foldable (toList)
 import Data.Void
@@ -30,23 +30,17 @@ data TVar' s = TVHole Depth | TVTy (TypeF (TVar s))
 
 type UnifyBase s = ExceptT String (ST s)
 
-type Check s =
-  ReaderT
-    Depth
-    (UnifyBase s)
+hole :: Depth -> UnifyBase s (TVar s)
+hole depth = TVar <$> UF.fresh (TVHole depth)
 
-hole :: Check s (TVar s)
-hole = do
-  h <- ask
-  TVar <$> UF.fresh (TVHole h)
-
-freshTy :: TypeF (TVar s) -> Check s (TVar s)
+{-# SPECIALIZE freshTy :: TypeF (TVar s) -> UnifyBase s (TVar s) #-}
+freshTy :: MonadST m => TypeF (TVar (World m)) -> m (TVar (World m))
 freshTy = fmap TVar . UF.fresh . TVTy
 
-assertTV :: TVar s -> TypeF (TVar s) -> Check s ()
+assertTV :: TVar s -> TypeF (TVar s) -> UnifyBase s ()
 assertTV ta ty = do
   tb <- freshTy ty
-  _ <- lift $ unifyTVar ta tb
+  _ <- unifyTVar ta tb
   pure ()
 
 {-# INLINE closeWith #-}
@@ -56,7 +50,7 @@ closeWith capFn root = uncurry (flip Scheme) <$> runStateT go 0
     tick :: StateT Int (UnifyBase s) Int
     tick = state $ \n -> (n, n + 1)
     go :: StateT Int (UnifyBase s) (Type (Either Int a))
-    go = captureM' $ \fRaw ->
+    go = capture $ \fRaw ->
       let f :: [TVar s] -> TVar s -> StateT Int (UnifyBase s) (Type (Either Int a))
           f prev (TVar p) = fRaw p $ \rep tv ->
             let rep' = TVar rep
@@ -82,51 +76,47 @@ unifyTVar (TVar va) (TVar vb) = unifyRec (throwError "Infinite type") f va vb
       Just qq -> TVTy <$> sequence qq
       Nothing -> throwError "mismatch"
 
-infer :: (a -> Scheme (TVar s)) -> Term a -> Check s (TVar s)
-infer ctx (Var a) = do
+infer :: (a -> Scheme (TVar s)) -> Depth -> Term a -> UnifyBase s (TVar s)
+infer ctx depth (Var a) = do
   let Scheme n h = ctx a
-  vars <- replicateM n hole
+  vars <- replicateM n (hole depth)
   Free.foldM
     (either (\ix -> pure (vars !! ix)) pure)
     freshTy
     h
-infer _ Unit = freshTy TUnit
-infer _ (Int _) = freshTy TInt
-infer ctx (Plus a b) = do
-  va <- infer ctx a
+infer _ _ Unit = freshTy TUnit
+infer _ _ (Int _) = freshTy TInt
+infer ctx depth (Plus a b) = do
+  va <- infer ctx depth a
   assertTV va TInt
-  vb <- infer ctx b
+  vb <- infer ctx depth b
   assertTV vb TInt
   freshTy TInt
-infer ctx (App f x) = do
-  vx <- infer ctx x
-  vf <- infer ctx f
-  vy <- hole
+infer ctx depth (App f x) = do
+  vx <- infer ctx depth x
+  vf <- infer ctx depth f
+  vy <- hole depth
+  -- TODO If I've analyzed this correctly, the reason we need the occurs checks of both unifyRec and close is because this next line creates an infinite type for \f. f f
   vf' <- freshTy (Arr vx vy)
-  _ <- lift $ unifyTVar vf vf'
+  _ <- unifyTVar vf vf'
   pure vy
-infer ctx (Let binding body) = do
-  -- TODO make a test case that fails on s/succ/id
-  tbind <- withReaderT succ $ do
-    t <- infer ctx binding
-    dep <- ask
-    lift $ close dep t
-  infer (unbind1 tbind ctx) body
-infer ctx (Lam body) = do
-  vx <- hole
-  vy <- infer (unbind1 (singletonScheme vx) ctx) body
+infer ctx depth (Let binding body) = do
+  let depth' = succ depth
+  tbody <- infer ctx depth' binding
+  scheme <- close depth' tbody
+  infer (unbind1 scheme ctx) depth body
+infer ctx depth (Lam body) = do
+  vx <- hole depth
+  vy <- infer (unbind1 (singletonScheme vx) ctx) depth body
   freshTy (Arr vx vy)
-infer ctx (Pair a b) = do
-  ta <- infer ctx a
-  tb <- infer ctx b
+infer ctx depth (Pair a b) = do
+  ta <- infer ctx depth a
+  tb <- infer ctx depth b
   freshTy (TPair ta tb)
 
 inferT :: Show a => Term a -> Either String (Type Int)
-inferT term = runST $ runExceptT $ runCheckBase $ do
+inferT term = runST $ runExceptT $ do
   closedTerm :: Term Void <- either (\vs -> throwError $ "Unbound variables: " <> show (toList vs)) pure $ closed term
-  typ <- infer absurd closedTerm
-  Scheme _ t <- lift $ closeWith (\_ _ -> Nothing) typ
+  typ <- infer absurd (Depth 0) closedTerm
+  Scheme _ t <- closeWith (\_ _ -> Nothing) typ
   pure $ either id absurd <$> t
-  where
-    runCheckBase :: Check s a -> UnifyBase s a
-    runCheckBase = flip runReaderT (Depth 0)
