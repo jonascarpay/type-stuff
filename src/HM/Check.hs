@@ -6,7 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module HM where
+module HM.Check where
 
 import Control.Monad.Except
 import Control.Monad.Reader

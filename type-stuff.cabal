@@ -32,7 +32,7 @@ library
   import:          common-options
   hs-source-dirs:  src
   exposed-modules:
-    HM
+    HM.Check
     HM.Term
     HM.Type
     Lib.Bind

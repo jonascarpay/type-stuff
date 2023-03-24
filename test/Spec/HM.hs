@@ -10,7 +10,7 @@ import Control.Applicative
 import qualified Control.Exception as E
 import Control.Monad
 import Data.Foldable (toList)
-import HM
+import HM.Check
 import HM.Term
 import HM.Type
 import Lib.Free
