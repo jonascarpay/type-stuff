@@ -79,14 +79,13 @@ close tv = uncurry (flip Scheme) <$> runStateT go 0
     tick = state $ \n -> (n, n + 1)
     go :: StateT Int (UnifyBase s) (Type (Either Int a))
     go = captureM' $ \fRaw ->
-      -- TODO detect infinite types
-      let f :: [TVar s (Bind1 a)] -> TVar s (Bind1 a) -> StateT Int (UnifyBase s) (Type (Either Int a))
-          f prev p
-            | p `elem` prev = throwError "Infinite type"
-            | otherwise = fRaw (unTVar p) $ \_ tv -> case tv of
-                TVHole (Bound ()) -> pure . Left <$> tick
-                TVHole (Free h) -> pure (pure (Right h))
-                TVTy t -> Fix <$> traverse (f $ p : prev) t
+      let f :: [Point s (TVar' s (Bind1 a))] -> TVar s (Bind1 a) -> StateT Int (UnifyBase s) (Type (Either Int a))
+          f prev (TVar p) = fRaw p $ \rep tv ->
+            case tv of
+              _ | elem rep prev -> throwError "Infinite type!"
+              TVHole (Bound ()) -> pure . Left <$> tick
+              TVHole (Free h) -> pure (pure (Right h))
+              TVTy t -> Fix <$> traverse (f $ rep : prev) t
        in f [] tv
 
 unifyTVarBase :: forall s h. (h -> h -> UnifyBase s h) -> TVar s h -> TVar s h -> UnifyBase s ()
