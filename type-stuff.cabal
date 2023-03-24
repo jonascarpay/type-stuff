@@ -33,6 +33,7 @@ library
   hs-source-dirs:  src
   exposed-modules:
     HM.Check
+    HM.FastCheck
     HM.Term
     HM.Type
     Lib.Bind

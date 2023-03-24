@@ -3,5 +3,5 @@ import Test.Hspec
 
 main :: IO ()
 main =
-  hspec $
+  hspec $ do
     describe "HM" Spec.HM.spec

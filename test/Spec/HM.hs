@@ -8,7 +8,8 @@ import Control.Applicative
 import qualified Control.Exception as E
 import Control.Monad
 import Data.Foldable (toList)
-import HM.Check
+import qualified HM.Check as Check
+import qualified HM.FastCheck as Fast
 import HM.Term
 import HM.Type
 import Lib.Free
@@ -39,18 +40,6 @@ instance Arbitrary1 TypeF where
   liftShrink _ TInt = []
   liftShrink _ TUnit = []
 
-checks :: Term String -> Type String -> Assertion
-checks term typ = do
-  typ' <- either assertFailure pure $ inferT term
-  unless (subtype typ' typ) . E.throwIO $
-    HUnitFailure Nothing $
-      ExpectedButGot Nothing (show typ) (show typ')
-
-typeError :: Term String -> Assertion
-typeError term = case inferT term of
-  Left _ -> pure ()
-  Right typ -> assertFailure $ "Unexpected success: " <> show typ
-
 spec :: Spec
 spec = do
   describe "Subtyping" $ do
@@ -58,6 +47,11 @@ spec = do
     prop "Every type t <: t with remapped variables" $ \(s :: Type Int) (Blind (f :: Int -> Int)) -> subtype s (f <$> s)
     prop "Every type t <: t with randomly instantiated variables" $ \(s :: Type Int) (Blind (f :: Int -> Type Int)) -> subtype s (s >>= f)
     prop "(∀ x. x) <: every type" $ \(s :: Type Int) -> subtype (pure ()) s
+  describe "reference" $ mkSpec Check.inferT
+  describe "faster" $ mkSpec Fast.inferT
+
+mkSpec :: (Term String -> Either String (Type Int)) -> Spec
+mkSpec infer = do
   describe "SKI Combinators" $ do
     it "I; λ x. x : a -> a" $
       checks
@@ -112,3 +106,15 @@ spec = do
       λ "f" $
         λ "x" ("f" @ ("x" @ "x"))
           @ λ "x" ("f" @ ("x" @ "x"))
+  where
+    checks :: Term String -> Type String -> Assertion
+    checks term typ = do
+      typ' <- either assertFailure pure $ infer term
+      unless (subtype typ' typ) . E.throwIO $
+        HUnitFailure Nothing $
+          ExpectedButGot Nothing (show typ) (show typ')
+
+    typeError :: Term String -> Assertion
+    typeError term = case infer term of
+      Left _ -> pure ()
+      Right typ -> assertFailure $ "Unexpected success: " <> show typ
