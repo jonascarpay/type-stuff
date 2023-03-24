@@ -12,6 +12,7 @@ import Control.Monad
 import Data.Foldable (toList)
 import HM
 import HM.Term
+import HM.Type
 import Lib.Free
 import Test.HUnit
 import Test.HUnit.Lang (FailureReason (ExpectedButGot), HUnitFailure (HUnitFailure))
@@ -47,8 +48,8 @@ checks term typ = do
     HUnitFailure Nothing $
       ExpectedButGot Nothing (show typ) (show typ')
 
-typeCheckFailure :: Term String -> Assertion
-typeCheckFailure term = case inferT term of
+typeError :: Term String -> Assertion
+typeError term = case inferT term of
   Left _ -> pure ()
   Right typ -> assertFailure $ "Unexpected success: " <> show typ
 
@@ -106,10 +107,10 @@ spec = do
             ~> "t2"
         )
   describe "Expected failures" $ do
-    it "() ()" $ typeCheckFailure (Unit @ Unit)
-    xit "λ f. f f" . typeCheckFailure $
+    it "() ()" $ typeError (Unit @ Unit)
+    it "λ f. f f" . typeError $
       λ "f" ("f" @ "f")
-    xit "Y = λ f. (λ x. f (x x)) (λ x. f (x x))" . typeCheckFailure $
+    it "Y = λ f. (λ x. f (x x)) (λ x. f (x x))" . typeError $
       λ "f" $
         λ "x" ("f" @ ("x" @ "x"))
           @ λ "x" ("f" @ ("x" @ "x"))

@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -11,7 +12,6 @@ import Control.Monad.State.Strict
 import Data.Function (on)
 import Data.STRef
 import Data.Traversable (for)
-import Data.Void (Void, absurd)
 
 newtype Point s a = Point {unPoint :: STRef s (Link s a)}
   deriving (Eq)
@@ -129,14 +129,30 @@ captureM' k = do
           pure r
         Just r -> pure r
 
-class Unify m a where
-  unify :: a -> a -> m a
-
-instance (Unify m a, MonadST m, s ~ World m) => Unify m (Point s a) where
-  unify a b = a <$ unifyWith unify a b
-
-instance Applicative m => Unify m () where
-  unify _ _ = pure ()
-
-instance Unify m Void where
-  unify a _ = absurd a
+unifyRec ::
+  forall m a.
+  (MonadST m) =>
+  (forall x. m x) ->
+  ( (Point (World m) a -> Point (World m) a -> m ()) ->
+    (a -> a -> m a)
+  ) ->
+  (Point (World m) a -> Point (World m) a -> m ())
+unifyRec infinite f = go []
+  where
+    go ::
+      [Point (World m) a] ->
+      Point (World m) a ->
+      Point (World m) a ->
+      m ()
+    go vis pa pb = do
+      (ra, a) <- repr pa
+      (rb, b) <- repr pb
+      case () of
+        _
+          | ra == rb -> pure ()
+          | elem ra vis -> infinite
+          | elem rb vis -> infinite
+          | otherwise -> do
+              writePoint rb (Link ra)
+              r <- f (go (ra : vis)) a b
+              writePoint ra (Rep r)

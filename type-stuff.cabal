@@ -34,10 +34,10 @@ library
   exposed-modules:
     HM
     HM.Term
+    HM.Type
     Lib.Bind
     Lib.Free
     Lib.Match
-    Lib.RVar
     Lib.Telescope
     Lib.UF
 
