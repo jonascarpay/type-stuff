@@ -3,10 +3,13 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module HM.Term where
 
 import Control.DeepSeq (NFData)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.String (IsString)
 import GHC.Exts (IsString (..))
 import GHC.Generics
@@ -17,7 +20,7 @@ data Term a
   | Lam (Term (Bind1 a))
   | App (Term a) (Term a)
   | Let (Term a) (Term (Bind1 a))
-  | LetRec (Term (Bind1 a)) (Term (Bind1 a))
+  | LetRec [Term (Bind Int a)] (Term (Bind Int a))
   | Int Int
   | Unit
   | Plus (Term a) (Term a)
@@ -48,8 +51,17 @@ infixl 9 @
 let' :: Eq a => a -> Term a -> Term a -> Term a
 let' name bound body = Let bound (abstract1 name body)
 
-letrec :: Eq a => a -> Term a -> Term a -> Term a
-letrec a binding body = LetRec (abstract1 a binding) (abstract1 a body)
+letrec :: forall a. Ord a => [(a, Term a)] -> Term a -> Term a
+letrec bindings body = LetRec (cap <$> terms) (cap body)
+  where
+    (names, terms) = unzip bindings
+    cap :: Term a -> Term (Bind Int a)
+    cap = abstract (flip Map.lookup indices)
+    indices :: Map a Int
+    indices = Map.fromList $ zip names [0 ..]
+
+letrec1 :: Ord a => a -> Term a -> Term a -> Term a
+letrec1 name binding = letrec [(name, binding)]
 
 -- | generate a large term for performance testing.
 -- explode 0 = id

@@ -3,13 +3,14 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module HM.FastCheck (inferT, infer) where
+module HM.FastCheck (inferT) where
 
 import Control.Monad.Except
 import Control.Monad.ST
 import Control.Monad.ST.Class (MonadST, World)
 import Control.Monad.State.Strict
 import Data.Foldable (toList)
+import qualified Data.IntMap as IntMap
 import Data.Void
 import HM.Term
 import HM.Type
@@ -114,23 +115,50 @@ infer ctx depth (Pair a b) = do
   ta <- infer ctx depth a
   tb <- infer ctx depth b
   freshTy (TPair ta tb)
-infer ctx depth (LetRec binding body) = do
+infer ctx depth (LetRec bindings body) = do
+  -- see [ref:mutual_recursion_groups]
   let depth' = succ depth
-  tbody' <- hole depth'
-  tbody <- infer (unbind1 (singletonScheme tbody') ctx) depth' binding
-  unifyTVar tbody tbody'
-  scheme <- close depth' tbody
-  infer (unbind1 scheme ctx) depth body
+  tempVars <- replicateM (length bindings) (hole depth')
+  forM_ (zip bindings tempVars) $ \(binding, tempVar) -> do
+    var <- infer (unbind (index $ singletonScheme <$> tempVars) ctx) depth' binding
+    unifyTVar var tempVar
+  schemes <- forM tempVars (close depth')
+  infer (unbind (index schemes) ctx) depth body
+
+index :: [a] -> (Int -> a)
+index as =
+  let m = IntMap.fromList (zip [0 ..] as)
+   in (m IntMap.!)
+
+-- [tag:mutual_recursion_groups]
+-- There's a subtle issue with checking letrec blocks.
+-- As shown in [ref:mutual_recursion_fail_demo],
+--   let id = λx. x in (id (), id 0)
+-- typechecks, but
+--   let id = λx. x; a = (id (), id 0) in a
+-- fails, even though they look equivalent.
+-- The reason is that *letrec checks all bindings simultaneously, in the same scope, and before generalizing*.
+-- In the example above, we have conflicting types of id, since it's used as both () -> () and Int -> Int.
+--
+-- Haskell seems to do something similar, but gets hides it by grouping the actually mutually recursive definitions together.
+-- Consider
+--   let
+--       a = b ()
+--       b = undefined
+--    in _
+-- and
+--   let
+--       a = b ()
+--       b = undefined a
+--    in _
+-- If we ask for the type of b, in the first case, GHC gives `a`, but in the second, it gives `() -> a`, even though the type is equally undetermined.
+--
+-- This seems annoying, but I actually think it's fine, or at least, it doesn't need to be solved at the `Term` level.
+-- Instead, we could write a `letrec` function that returns a properly-grouped Term.
 
 inferT :: Show a => Term a -> Either String (Type Int)
 inferT term = runST $ runExceptT $ do
   closedTerm :: Term Void <- either (\vs -> throwError $ "Unbound variables: " <> show (toList vs)) pure $ closed term
   typ <- infer absurd (Depth 0) closedTerm
-  Scheme _ t <- closeWith (\_ _ -> Nothing) typ
-  pure $ either id absurd <$> t
-
-runInfer :: Term Void -> Either String (Type Int)
-runInfer term = runST $ runExceptT $ do
-  typ <- infer absurd (Depth 0) term
   Scheme _ t <- closeWith (\_ _ -> Nothing) typ
   pure $ either id absurd <$> t

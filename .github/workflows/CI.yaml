@@ -17,6 +17,14 @@ jobs:
       - name: Build type-stuff shell
         run: nix build -L '.#devShell.x86_64-linux'
 
+  tag-check:
+    name: Tagref check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: cachix/install-nix-action@v16
+      - run: nix develop --command tagref
+
   stack-build:
     name: Stack ${{ matrix.resolver }} on ${{ matrix.os }}
     strategy:

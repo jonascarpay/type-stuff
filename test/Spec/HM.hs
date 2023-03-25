@@ -108,9 +108,23 @@ mkSpec infer = do
         )
         ("a" ~> tup (Fix TInt) "a")
   describe "letrec" $ do
-    it "infinity" $ checks (letrec "speen" "speen" "speen") "a"
-    it "fix" $ checks (letrec "fix" (λ "f" $ "f" @ ("fix" @ "f")) "fix") (("a" ~> "a") ~> "a")
-    it "let s = s s in s" . typeError $ letrec "s" ("s" @ "s") "s"
+    it "infinity" $ checks (letrec1 "speen" "speen" "speen") "a"
+    it "mutual infinity" $ checks (letrec [("a", "b"), ("b", "a")] "a") "a"
+    it "fix" $ checks (letrec1 "fix" (λ "f" $ "f" @ ("fix" @ "f")) "fix") (("a" ~> "a") ~> "a")
+    it "let s = s s in s" . typeError $ letrec1 "s" ("s" @ "s") "s"
+    describe "mutual recursion fail demo" $ do
+      -- [tag:mutual_recursion_fail_demo]
+      -- see [ref:mutual_recursion_groups]
+      it "exhibit A" . infers $
+        letrec
+          [("id", λ "x" "x")]
+          (Pair ("id" @ Unit) ("id" @ 0))
+      it "exhibit B" . typeError $
+        letrec
+          [ ("id", λ "x" "x"),
+            ("a", Pair ("id" @ Unit) ("id" @ 0))
+          ]
+          "a"
   describe "Infinite types" $ do
     it "() ()" $ typeError (Unit @ Unit)
     it "λ f. f f" . typeError $

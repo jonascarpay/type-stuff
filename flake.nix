@@ -34,6 +34,7 @@
               hspkgs.hlint
               hspkgs.ormolu
               pkgs.bashInteractive
+              pkgs.tagref
             ];
           };
           defaultPackage = pkgs.type-stuff;

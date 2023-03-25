@@ -9,6 +9,7 @@ import Control.Monad.ST
 import Control.Monad.ST.Class (MonadST (liftST))
 import Control.Monad.State.Strict
 import Data.Foldable (toList)
+import qualified Data.IntMap as IntMap
 import Data.Void
 import HM.Term
 import HM.Type
@@ -115,14 +116,22 @@ infer ctx (Pair a b) = do
   ta <- infer ctx a
   tb <- infer ctx b
   freshTy (TPair ta tb)
-infer ctx (LetRec binding body) = do
-  tbind <- withReaderT (\(_, f) -> (Bound1, unifyTVarBase (unifyBindTVar f))) $ do
-    tbody <- hole
-    tbody' <- infer (unbind1 (pure $ singletonScheme tbody) (ctx >=> liftScheme')) binding
-    unifyTVar tbody tbody'
-    pure tbody
-  tbind' <- lift $ close tbind
-  infer (unbind1 (pure tbind') ctx) body
+infer ctx (LetRec bindings body) = do
+  -- see [ref:mutual_recursion_groups]
+  vars <- withReaderT (\(_, f) -> (Bound1, unifyTVarBase (unifyBindTVar f))) $ do
+    tempVars <- replicateM (length bindings) hole
+    let schemes = singletonScheme <$> tempVars
+    forM_ (zip bindings tempVars) $ \(binding, tempVar) -> do
+      var <- infer (unbind (pure . index schemes) (ctx >=> liftScheme')) binding
+      unifyTVar tempVar var
+    pure tempVars
+  schemes <- lift $ forM vars close
+  infer (unbind (pure . index schemes) ctx) body
+
+index :: [a] -> (Int -> a)
+index as =
+  let m = IntMap.fromList (zip [0 ..] as)
+   in (m IntMap.!)
 
 unifyBindTVar :: (TVar s h -> TVar s h -> UnifyBase s ()) -> Bind1 (TVar s h) -> Bind1 (TVar s h) -> UnifyBase s (Bind1 (TVar s h))
 unifyBindTVar f (Free a) (Free b) = Free <$> (\p q -> p <$ f p q) a b
