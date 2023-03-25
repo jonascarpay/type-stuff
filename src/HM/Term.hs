@@ -17,6 +17,7 @@ data Term a
   | Lam (Term (Bind1 a))
   | App (Term a) (Term a)
   | Let (Term a) (Term (Bind1 a))
+  | LetRec (Term (Bind1 a)) (Term (Bind1 a))
   | Int Int
   | Unit
   | Plus (Term a) (Term a)
@@ -46,6 +47,9 @@ infixl 9 @
 
 let' :: Eq a => a -> Term a -> Term a -> Term a
 let' name bound body = Let bound (abstract1 name body)
+
+letrec :: Eq a => a -> Term a -> Term a -> Term a
+letrec a binding body = LetRec (abstract1 a binding) (abstract1 a body)
 
 -- | generate a large term for performance testing.
 -- explode 0 = id

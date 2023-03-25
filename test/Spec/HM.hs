@@ -107,7 +107,11 @@ mkSpec infer = do
               ("withA" @ 0)
         )
         ("a" ~> tup (Fix TInt) "a")
-  describe "Expected failures" $ do
+  describe "letrec" $ do
+    it "infinity" $ checks (letrec "speen" "speen" "speen") "a"
+    it "fix" $ checks (letrec "fix" (λ "f" $ "f" @ ("fix" @ "f")) "fix") (("a" ~> "a") ~> "a")
+    it "let s = s s in s" . typeError $ letrec "s" ("s" @ "s") "s"
+  describe "Infinite types" $ do
     it "() ()" $ typeError (Unit @ Unit)
     it "λ f. f f" . typeError $
       λ "f" ("f" @ "f")

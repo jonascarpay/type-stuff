@@ -114,6 +114,13 @@ infer ctx depth (Pair a b) = do
   ta <- infer ctx depth a
   tb <- infer ctx depth b
   freshTy (TPair ta tb)
+infer ctx depth (LetRec binding body) = do
+  let depth' = succ depth
+  tbody' <- hole depth'
+  tbody <- infer (unbind1 (singletonScheme tbody') ctx) depth' binding
+  unifyTVar tbody tbody'
+  scheme <- close depth' tbody
+  infer (unbind1 scheme ctx) depth body
 
 inferT :: Show a => Term a -> Either String (Type Int)
 inferT term = runST $ runExceptT $ do
