@@ -25,7 +25,9 @@
         {
           devShell = hspkgs.shellFor {
             withHoogle = true;
+            doBenchmark = true;
             packages = p: [ p.type-stuff ];
+            extraDependencies = p: { benchmarkHaskellDepends = [ p.criterion ]; }; # doBenchmark does not work for whatever reason
             buildInputs = [
               hspkgs.cabal-install
               hspkgs.haskell-language-server

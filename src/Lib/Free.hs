@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes #-}
@@ -5,18 +6,22 @@
 
 module Lib.Free where
 
+import Control.DeepSeq
 import Control.Monad (ap)
 import Data.String (IsString (..))
+import GHC.Generics
 
 data Free f a
   = Pure a
   | Fix (f (Free f a))
-  deriving (Functor, Foldable, Traversable)
+  deriving (Functor, Foldable, Traversable, Generic, Generic1)
 
 instance IsString a => IsString (Free f a) where
   fromString = Pure . fromString
 
 deriving instance (Eq a, forall x. Eq x => Eq (f x)) => Eq (Free f a)
+
+instance (NFData a, forall x. NFData x => NFData (f x)) => NFData (Free f a)
 
 instance (Show a, forall x. Show x => Show (f x)) => Show (Free f a) where
   showsPrec p (Pure a) = showsPrec p a

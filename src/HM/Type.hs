@@ -7,6 +7,7 @@
 module HM.Type where
 
 import Control.Applicative
+import Control.DeepSeq (NFData)
 import Control.Monad.State
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -20,8 +21,8 @@ data TypeF a
   | TPair a a
   | TInt
   | TUnit
-  deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic1)
-  deriving anyclass (Match)
+  deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic, Generic1)
+  deriving anyclass (Match, NFData)
 
 type Type = Free TypeF
 
@@ -54,6 +55,6 @@ data Scheme a
       (Type (Either Int a))
   deriving (Show)
 
--- Technically, Scheme is a Monad, and this is be return/pure
+-- Technically, Scheme is a Monad, and this is return/pure
 singletonScheme :: a -> Scheme a
 singletonScheme tv = Scheme 0 (pure (Right tv))

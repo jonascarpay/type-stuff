@@ -1,10 +1,15 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module HM.Term where
 
+import Control.DeepSeq (NFData)
 import Data.String (IsString)
 import GHC.Exts (IsString (..))
+import GHC.Generics
 import Rebound
 
 data Term a
@@ -16,7 +21,8 @@ data Term a
   | Unit
   | Plus (Term a) (Term a)
   | Pair (Term a) (Term a)
-  deriving (Eq, Show, Functor, Foldable, Traversable)
+  deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic, Generic1)
+  deriving anyclass (NFData)
 
 instance Num (Term a) where
   fromInteger = Int . fromInteger
@@ -41,14 +47,12 @@ infixl 9 @
 let' :: Eq a => a -> Term a -> Term a -> Term a
 let' name bound body = Let bound (abstract1 name body)
 
-soup :: Term String
-soup =
-  let'
-    "outer"
-    ( λ "a" $
-        let'
-          "inner"
-          (λ "x" $ Pair "x" "a")
-          (Pair ("inner" @ "a") ("inner" @ 0))
-    )
-    "outer"
+-- | generate a large term for performance testing.
+-- explode 0 = id
+-- explode n = (explode n-1, explode n-1)
+explode :: Int -> Term a
+explode = Let (Lam $ Var Bound1) . go
+  where
+    go :: Int -> Term (Bind1 a)
+    go 0 = Var Bound1
+    go n = Let (Pair (Var Bound1) (Var Bound1)) (go (n - 1))

@@ -3,7 +3,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module HM.FastCheck (inferT) where
+module HM.FastCheck (inferT, infer) where
 
 import Control.Monad.Except
 import Control.Monad.ST
@@ -30,6 +30,7 @@ data TVar' s = TVHole Depth | TVTy (TypeF (TVar s))
 
 type UnifyBase s = ExceptT String (ST s)
 
+{-# INLINE hole #-}
 hole :: Depth -> UnifyBase s (TVar s)
 hole depth = TVar <$> UF.fresh (TVHole depth)
 
@@ -118,5 +119,11 @@ inferT :: Show a => Term a -> Either String (Type Int)
 inferT term = runST $ runExceptT $ do
   closedTerm :: Term Void <- either (\vs -> throwError $ "Unbound variables: " <> show (toList vs)) pure $ closed term
   typ <- infer absurd (Depth 0) closedTerm
+  Scheme _ t <- closeWith (\_ _ -> Nothing) typ
+  pure $ either id absurd <$> t
+
+runInfer :: Term Void -> Either String (Type Int)
+runInfer term = runST $ runExceptT $ do
+  typ <- infer absurd (Depth 0) term
   Scheme _ t <- closeWith (\_ _ -> Nothing) typ
   pure $ either id absurd <$> t
