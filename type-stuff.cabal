@@ -39,7 +39,6 @@ library
     HM.FastCheck
     HM.Term
     HM.Type
-    Lib.Bind
     Lib.Free
     Lib.Match
     Lib.Telescope
