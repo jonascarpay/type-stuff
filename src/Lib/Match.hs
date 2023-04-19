@@ -1,5 +1,8 @@
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Lib.Match where
@@ -19,6 +22,10 @@ instance (Match f, Match g) => Match (f :+: g) where
   match f (R1 l) (R1 r) = R1 <$> match f l r
   match _ _ _ = Nothing
 
+instance (Match f, Match g) => Match (f :.: g) where
+  {-# INLINE match #-}
+  match fn (Comp1 fg1) (Comp1 fg2) = match (match fn) fg1 fg2 >>= fmap Comp1 . sequenceA
+
 instance (Match f, Match g) => Match (f :*: g) where
   {-# INLINE match #-}
   match f (l1 :*: r1) (l2 :*: r2) = liftA2 (:*:) (match f l1 l2) (match f r1 r2)
@@ -34,3 +41,15 @@ instance Match f => Match (M1 i c f) where
 instance Match Par1 where
   {-# INLINE match #-}
   match f (Par1 a) (Par1 b) = pure $ Par1 (f a b)
+
+instance Eq c => Match (K1 i c) where
+  {-# INLINE match #-}
+  match _ (K1 c1) (K1 c2)
+    | c1 == c2 = Just (K1 c1)
+    | otherwise = Nothing
+
+deriving newtype instance Match f => Match (Rec1 f)
+
+instance Match []
+
+instance Eq b => Match ((,) b)

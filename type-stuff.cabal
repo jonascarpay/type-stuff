@@ -39,6 +39,7 @@ library
     HM.FastCheck
     HM.Term
     HM.Type
+    HM2.Term
     Lib.Free
     Lib.Match
     Lib.Telescope
@@ -56,12 +57,16 @@ test-suite type-stuff-test
   type:           exitcode-stdio-1.0
   hs-source-dirs: test
   main-is:        Spec.hs
-  other-modules:  Spec.HM
+  other-modules:
+    Spec.HM
+    Spec.HM2
+
   build-depends:
     , containers
     , hspec
     , HUnit
     , QuickCheck
+    , safe-gen
     , type-stuff
 
   ghc-options:    -threaded -rtsopts -with-rtsopts=-N

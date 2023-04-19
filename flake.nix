@@ -5,6 +5,7 @@
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.unify.url = "github:jonascarpay/unify";
   inputs.rebound.url = "github:jonascarpay/rebound";
+  inputs.safe-gen.url = "github:xc-jp/safe-gen";
 
   outputs = inputs:
     let
@@ -19,7 +20,15 @@
       };
       perSystem = system:
         let
-          pkgs = import inputs.nixpkgs { inherit system; overlays = [ inputs.unify.overlay inputs.rebound.overlay overlay ]; };
+          pkgs = import inputs.nixpkgs {
+            inherit system;
+            overlays = [
+              inputs.unify.overlay
+              inputs.rebound.overlay
+              inputs.safe-gen.overlay
+              overlay
+            ];
+          };
           hspkgs = pkgs.haskellPackages;
         in
         {
