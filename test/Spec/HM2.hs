@@ -2,12 +2,14 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Spec.HM2 where
 
 import Control.Monad (replicateM)
 import Data.Function (on)
+import Data.List (elemIndex)
 import GHC.Generics
 import HM2.Term as HM2
 import Test.Hspec
@@ -45,18 +47,22 @@ rterm f =
       let e = Safe.frequency [(3, Right <$> f), (1, Left <$> gen (chooseInt (0, n - 1)))]
        in RLetRec <$> replicateM n (rterm e) <*> rterm e
 
-safeTerm :: [String] -> SafeGen Term
-safeTerm names = go
+safeTerm :: Positive (Small Int) -> SafeGen Term
+safeTerm (Positive (Small n_names)) = go n_names
   where
-    name = gen (elements names)
-    go =
+    name n = show <$> gen (chooseInt (0, n - 1))
+    go :: Int -> SafeGen Term
+    go n =
       Term
         <$> Safe.oneof
-          [ Var <$> name,
-            Lam <$> name <*> go,
-            App <$> go <*> go,
-            Let <$> name <*> go <*> go
+          [ Var <$> name n,
+            Lam (show n) <$> go (n + 1),
+            App <$> go n <*> go n,
+            Let (show n) <$> go n <*> go (n + 1),
+            Safe.oneof (letrec n <$> [0 .. 6])
           ]
+    letrec :: Int -> Int -> SafeGen (TermF String String Term)
+    letrec n n_binds = LetRec <$> sequenceA [(show ix,) <$> go (n + n_binds) | ix <- take n_binds [0 :: Int ..]] <*> go (n + n_binds)
 
 abstract1 :: (Eq a, Functor f) => a -> f a -> f (Maybe a)
 abstract1 a = fmap $ \a' -> if a == a' then Nothing else Just a'
@@ -66,12 +72,18 @@ fromTerm (Term (Var v)) = RVar v
 fromTerm (Term (Lam v b)) = RLam $ abstract1 v $ fromTerm b
 fromTerm (Term (App a b)) = RApp (fromTerm a) (fromTerm b)
 fromTerm (Term (Let v bi bo)) = RLet (fromTerm bi) (abstract1 v $ fromTerm bo)
-fromTerm (Term (LetRec _ _)) = error "not implemented"
+fromTerm (Term (LetRec binds body)) = RLetRec (fmap cap . fromTerm <$> binds') (cap <$> fromTerm body)
+  where
+    (names, binds') = unzip binds
+    cap :: String -> Either Int String
+    cap str = case elemIndex str names of
+      Just n -> Left n
+      Nothing -> Right str
 
 instance Arbitrary Term where
   arbitrary = do
-    names <- arbitrary
-    runSafeGen $ safeTerm (show . getSmall . getPositive <$> getNonEmpty names)
+    n <- arbitrary
+    runSafeGen $ safeTerm n
   shrink (Term (Var v)) = Term . Var <$> shrink v
   shrink (Term (Lam b v)) = [v] <> [Term (Lam b' v) | b' <- shrink b] <> (Term . Lam b <$> shrink v)
   shrink (Term (App a b)) = [a, b] <> (Term . App a <$> shrink b) <> [Term (App a' b) | a' <- shrink a]
@@ -100,11 +112,11 @@ toTerm = go 1 (const 0)
        in Term $ LetRec ((\(bind, n) -> (lb n, go' bind)) <$> zip binds [dep ..]) (go' body)
 
 spec :: Spec
-spec = modifyMaxDiscardRatio (const 100000000) . modifyMaxSuccess (const 1000) $ do
-  prop "alpha" $ \(a :: RTerm ()) b ->
-    (a == b) ==> on alphaEquivalent (resolve . toTerm) a b
-  prop "alpha2" $ \(a :: Term) b ->
-    on alphaEquivalent resolve a b ==> fromTerm a == fromTerm b
+spec = do
+  prop "a α b == toTerm a α toTerm b" $ \(a :: RTerm ()) b ->
+    (a == b) == on alphaEquivalent (resolve . toTerm) a b
+  prop "a α b == fromTerm a α fromTerm b" $ \(a :: Term) b ->
+    on alphaEquivalent resolve a b == (fromTerm a == fromTerm b)
 
 newtype SmallInt = SmallInt Int
 
