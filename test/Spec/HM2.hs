@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -24,8 +25,18 @@ data RTerm a
   | RApp (RTerm a) (RTerm a)
   | RLet (RTerm a) (RTerm (Maybe a))
   | RLetRec [RTerm (Either Int a)] (RTerm (Either Int a))
-  deriving stock (Generic, Show, Eq, Functor)
-  deriving (Arbitrary) via (FromSafeArbitrary (RTerm a))
+  deriving stock (Generic, Show, Eq, Functor, Foldable, Traversable)
+
+instance (Arbitrary a, SafeArbitrary a) => Arbitrary (RTerm a) where
+  arbitrary = runSafeGen safeArbitrary
+  shrink (RVar a) = RVar <$> shrink a
+  shrink (RLam body) = (RLam <$> shrink body) <> traverse (foldMap shrink) body
+  shrink (RApp a b) = [a, b] <> (RApp a <$> shrink b) <> [RApp a' b | a' <- shrink a]
+  shrink (RLet bind body) = [bind, RLam body] <> (RLet bind <$> shrink body) <> [RLet bind' body | bind' <- shrink bind]
+  shrink (RLetRec bis bo) = (tolam <$> bis) <> [tolam bo] <> (flip RLetRec bo <$> shrink bis) <> (RLetRec bis <$> shrink bo)
+    where
+      tolam :: RTerm (Either Int a) -> RTerm a
+      tolam = RLam . fmap (either (const Nothing) Just)
 
 instance SafeArbitrary a => SafeArbitrary (RTerm a) where
   safeArbitrary = rterm safeArbitrary
@@ -87,39 +98,35 @@ instance Arbitrary Term where
   shrink (Term (Var v)) = Term . Var <$> shrink v
   shrink (Term (Lam b v)) = [v] <> [Term (Lam b' v) | b' <- shrink b] <> (Term . Lam b <$> shrink v)
   shrink (Term (App a b)) = [a, b] <> (Term . App a <$> shrink b) <> [Term (App a' b) | a' <- shrink a]
-  shrink (Term (Let _ bi bo)) = [bi, bo]
-  shrink (Term (LetRec _ _)) = []
+  shrink (Term (Let v bi bo)) = [bi, bo] <> [Term (Let v' bi bo) | v' <- shrink v]
+  shrink (Term (LetRec bis bo)) = [bo] <> (snd <$> bis) <> [Term (LetRec bis' bo) | bis' <- shrink bis] <> (Term . LetRec bis <$> shrink bo)
 
--- shrink = genericShrink
-
-toTerm :: RTerm () -> Term
-toTerm = go 1 (const 0)
+toTerm :: RTerm String -> Term
+toTerm = go 0 id
   where
     lb :: Int -> String
     lb n = 'v' : show n
-    go :: Int -> (a -> Int) -> RTerm a -> Term
-    go _ ctx (RVar v) = Term $ Var (lb $ ctx v)
+    go :: Int -> (a -> String) -> RTerm a -> Term
+    go _ ctx (RVar v) = Term $ Var (ctx v)
     go dep ctx (RLam body) =
       let dep' = dep + 1
-       in Term $ Lam (lb dep') (go dep' (maybe dep ctx) body)
+       in Term $ Lam (lb dep') (go dep' (maybe (lb dep) ctx) body)
     go dep ctx (RApp a b) = Term $ App (go dep ctx a) (go dep ctx b)
     go dep ctx (RLet bind body) =
       let dep' = dep + 1
-       in Term $ Let (lb dep') (go dep ctx bind) (go dep' (maybe dep ctx) body)
+       in Term $ Let (lb dep') (go dep ctx bind) (go dep' (maybe (lb dep) ctx) body)
     go dep ctx (RLetRec binds body) =
       let dep' = dep + length binds
-          go' = go dep' (either (dep +) ctx)
+          go' = go dep' (either (lb . (dep +)) ctx)
        in Term $ LetRec ((\(bind, n) -> (lb n, go' bind)) <$> zip binds [dep ..]) (go' body)
 
 spec :: Spec
 spec = do
-  prop "a α b == toTerm a α toTerm b" $ \(a :: RTerm ()) b ->
+  prop "a α toTerm (fromTerm a)" $ \(a :: Term) ->
+    on alphaEquivalent resolve a (toTerm (fromTerm a))
+  prop "a α fromTerm (toTerm a)" $ \(a :: RTerm String) ->
+    a == fromTerm (toTerm a)
+  prop "a α b == toTerm a α toTerm b" $ \(a :: RTerm String) b ->
     (a == b) == on alphaEquivalent (resolve . toTerm) a b
   prop "a α b == fromTerm a α fromTerm b" $ \(a :: Term) b ->
     on alphaEquivalent resolve a b == (fromTerm a == fromTerm b)
-
-newtype SmallInt = SmallInt Int
-
-instance Arbitrary SmallInt where
-  arbitrary = SmallInt <$> choose (0, 4)
-  shrink (SmallInt n) = SmallInt <$> take n [0 ..]
