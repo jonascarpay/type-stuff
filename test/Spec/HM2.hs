@@ -126,7 +126,7 @@ spec = do
     on alphaEquivalent resolve a (toTerm (fromTerm a))
   prop "a α fromTerm (toTerm a)" $ \(a :: RTerm String) ->
     a == fromTerm (toTerm a)
-  prop "a α b == toTerm a α toTerm b" $ \(a :: RTerm String) b ->
+  prop "a α b == toTerm a α toTerm b" $ withMaxSuccess 10000 $ \(a :: RTerm String) b ->
     (a == b) == on alphaEquivalent (resolve . toTerm) a b
-  prop "a α b == fromTerm a α fromTerm b" $ \(a :: Term) b ->
+  prop "a α b == fromTerm a α fromTerm b" $ withMaxSuccess 10000 $ \(a :: Term) b ->
     on alphaEquivalent resolve a b == (fromTerm a == fromTerm b)
