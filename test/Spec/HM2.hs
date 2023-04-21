@@ -110,11 +110,11 @@ toTerm = go 0 id
     go _ ctx (RVar v) = Term $ Var (ctx v)
     go dep ctx (RLam body) =
       let dep' = dep + 1
-       in Term $ Lam (lb dep') (go dep' (maybe (lb dep) ctx) body)
+       in Term $ Lam (lb dep) (go dep' (maybe (lb dep) ctx) body)
     go dep ctx (RApp a b) = Term $ App (go dep ctx a) (go dep ctx b)
     go dep ctx (RLet bind body) =
       let dep' = dep + 1
-       in Term $ Let (lb dep') (go dep ctx bind) (go dep' (maybe (lb dep) ctx) body)
+       in Term $ Let (lb dep) (go dep ctx bind) (go dep' (maybe (lb dep) ctx) body)
     go dep ctx (RLetRec binds body) =
       let dep' = dep + length binds
           go' = go dep' (either (lb . (dep +)) ctx)
