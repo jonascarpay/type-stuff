@@ -20,6 +20,7 @@ import Control.Monad.Trans.State
 import Data.Function (on)
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.String (IsString (..))
 import Data.Traversable (for)
 import GHC.Generics
 
@@ -31,8 +32,11 @@ data TermF b v a
   | LetRec [(b, a)] a
   deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic)
 
+instance IsString v => IsString (TermF b v a) where
+  fromString = Var . fromString
+
 newtype Term = Term (TermF String String Term)
-  deriving newtype (Show)
+  deriving newtype (Eq, Show, IsString)
   deriving stock (Generic)
 
 data Tree a = Leaf a | Branch (Tree a) (Tree a)
