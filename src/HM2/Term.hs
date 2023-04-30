@@ -39,23 +39,17 @@ newtype Term = Term (TermF String String Term)
   deriving newtype (Eq, Show, IsString)
   deriving stock (Generic)
 
-data Tree a = Leaf a | Branch (Tree a) (Tree a)
+data Tree a = Leaf !a | Branch !(Tree a) !(Tree a)
   deriving (Functor, Foldable, Traversable)
 
 newtype FreeVars = FreeVars {unFreeVars :: Map String (Tree Usage)}
 
 instance Semigroup FreeVars where FreeVars a <> FreeVars b = FreeVars $ Map.unionWith Branch a b
 
-newtype Context = Context (Map String Binder)
+type Context = Map String Binder
 
-emptyCtx :: Context
-emptyCtx = Context mempty
-
-lookupCtx :: String -> Context -> Maybe Binder
-lookupCtx name (Context ctx) = Map.lookup name ctx
-
-insertCtx :: Binder -> Context -> Context
-insertCtx b (Context ctx) = Context $ Map.insert (binderName b) b ctx
+insert :: Binder -> Context -> Context
+insert b = Map.insert (binderName b) b
 
 singleton :: String -> Usage -> FreeVars
 singleton s v = FreeVars $ Map.singleton s (Leaf v)
@@ -85,23 +79,22 @@ data Usage = Usage
   }
 
 resolve :: Term -> TermInfo
-resolve term' = evalState (go emptyCtx 0 term') 0
+resolve term' = evalState (go mempty 0 term') 0
   where
     tick :: State Int Int
     tick = state $ \n -> (n, n + 1)
     mkBinder :: String -> Context -> Depth -> State Int Binder
     mkBinder lbl ctx depth = do
       binderId <- tick
-      pure $ BinderInfo lbl binderId depth (lookupCtx lbl ctx)
+      pure $ BinderInfo lbl binderId depth (Map.lookup lbl ctx)
     go :: Context -> Depth -> Term -> State Int TermInfo
     go ctx depth (Term term) = case term of
       Var v -> flip fmap tick $ \varId ->
-        let var = Usage v varId (lookupCtx v ctx) depth
+        let var = Usage v varId (Map.lookup v ctx) depth
          in TermInfo (singleton v var) $ Var var
       Lam name body -> do
         binder <- mkBinder name ctx depth
-        let ctx' = insertCtx binder ctx
-        body' <- go ctx' (depth + 1) body
+        body' <- go (insert binder ctx) (depth + 1) body
         pure $ TermInfo (delete name $ freeVars body') $ Lam binder body'
       App a b -> do
         a' <- go ctx depth a
@@ -110,8 +103,7 @@ resolve term' = evalState (go emptyCtx 0 term') 0
       Let name def body -> do
         def' <- go ctx depth def
         binder <- mkBinder name ctx depth
-        let ctx' = insertCtx binder ctx
-        body' <- go ctx' (depth + 1) body
+        body' <- go (insert binder ctx) (depth + 1) body
         pure $
           TermInfo
             { freeVars = freeVars def' <> delete name (freeVars body'),
@@ -121,7 +113,7 @@ resolve term' = evalState (go emptyCtx 0 term') 0
         -- TODO check name collisions
         binders <- for (zip defs [0 ..]) $ \((binder, _), offset) ->
           mkBinder binder ctx (depth + offset)
-        let ctx' = foldr insertCtx ctx binders
+        let ctx' = foldr insert ctx binders
             depth' = depth + length defs
         defs' <- for defs $ \(_, def) -> go ctx' depth' def
         body' <- go ctx' depth' body
