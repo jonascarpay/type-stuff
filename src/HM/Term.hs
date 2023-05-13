@@ -1,74 +1,201 @@
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module HM.Term where
+module HM.Term
+  ( TermF (..),
+    termFT,
+    Term (..),
+    TermInfo (..),
+    Usage (..),
+    Binder (..),
+    FreeVars (..),
+    resolve,
+    alphaEquivalent,
+    deBruijn,
+  )
+where
 
-import Control.DeepSeq (NFData)
+import Control.Monad.Trans.State
+import Data.Bitraversable (bitraverse)
+import Data.Function (on)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.String (IsString)
-import GHC.Exts (IsString (..))
+import Data.String (IsString (..))
+import Data.Traversable (for)
 import GHC.Generics
-import Rebound
 
-data Term a
-  = Var a
-  | Lam (Term (Bind1 a))
-  | App (Term a) (Term a)
-  | Let (Term a) (Term (Bind1 a))
-  | LetRec [Term (Bind Int a)] (Term (Bind Int a))
-  | Int Int
+data TermF b v a
+  = Var v
+  | Lam b a
+  | App a a
+  | Let b a a
+  | LetRec [(b, a)] a
+  | Lit Int
   | Unit
-  | Plus (Term a) (Term a)
-  | Pair (Term a) (Term a)
-  deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic, Generic1)
-  deriving anyclass (NFData)
+  | Plus a a
+  | Pair a a
+  deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic)
 
-instance Num (Term a) where
-  fromInteger = Int . fromInteger
-  (+) = Plus
-  (*) = error "not implemented"
-  (-) = error "not implemented"
-  signum = error "not implemented"
-  abs = error "not implemented"
+{-# INLINE termFT #-}
+termFT ::
+  Applicative m =>
+  (b -> m b') ->
+  (v -> m v') ->
+  (a -> m a') ->
+  (TermF b v a -> m (TermF b' v' a'))
+termFT fb fv fa = go
+  where
+    go (Var v) = Var <$> fv v
+    go (Lam b a) = Lam <$> fb b <*> fa a
+    go (App a b) = App <$> fa a <*> fa b
+    go (Let n b a) = Let <$> fb n <*> fa b <*> fa a
+    go (LetRec bs a) = LetRec <$> traverse (bitraverse fb fa) bs <*> fa a
+    go (Lit n) = pure (Lit n)
+    go Unit = pure Unit
+    go (Plus a b) = Plus <$> fa a <*> fa b
+    go (Pair a b) = Pair <$> fa a <*> fa b
 
-instance IsString a => IsString (Term a) where
+instance IsString v => IsString (TermF b v a) where
   fromString = Var . fromString
 
-lam, λ :: Eq a => a -> Term a -> Term a
-lam a = Lam . abstract1 a
-λ = lam
+instance Num Term where
+  fromInteger = Term . Lit . fromInteger
+  a + b = Term (Plus a b)
+  (*) = error "not implemented"
+  (-) = error "not implemented"
+  abs = error "not implemented"
+  signum = error "not implemented"
 
-infixl 9 @
+newtype Term = Term (TermF String String Term)
+  deriving newtype (Eq, Show, IsString)
+  deriving stock (Generic)
 
-(@) :: Term a -> Term a -> Term a
-(@) = App
+data Tree a = Leaf !a | Branch !(Tree a) !(Tree a)
+  deriving (Functor, Foldable, Traversable)
 
-let' :: Eq a => a -> Term a -> Term a -> Term a
-let' name bound body = Let bound (abstract1 name body)
+newtype FreeVars = FreeVars {unFreeVars :: Map String (Tree Usage)}
 
-letrec :: forall a. Ord a => [(a, Term a)] -> Term a -> Term a
-letrec bindings body = LetRec (cap <$> terms) (cap body)
+instance Semigroup FreeVars where FreeVars a <> FreeVars b = FreeVars $ Map.unionWith Branch a b
+
+instance Monoid FreeVars where mempty = FreeVars mempty
+
+type Context = Map String Binder
+
+insert :: Binder -> Context -> Context
+insert b = Map.insert (binderName b) b
+
+singleton :: String -> Usage -> FreeVars
+singleton s v = FreeVars $ Map.singleton s (Leaf v)
+
+delete :: String -> FreeVars -> FreeVars
+delete s (FreeVars v) = FreeVars (Map.delete s v)
+
+type Depth = Int
+
+data TermInfo = TermInfo
+  { freeVars :: FreeVars,
+    infoTerm :: TermF Binder Usage TermInfo
+  }
+
+data Binder = BinderInfo
+  { binderName :: !String,
+    binderID :: !Int,
+    binderDepth :: !Depth,
+    binderShadow :: !(Maybe Binder)
+  }
+
+data Usage = Usage
+  { varName :: !String, -- TODO this can be unified with varBinder into Either String Binder
+    varID :: !Int,
+    varBinder :: Maybe Binder,
+    varDepth :: Depth
+  }
+
+resolve :: Term -> TermInfo
+resolve term' = evalState (go mempty 0 term') 0
   where
-    (names, terms) = unzip bindings
-    cap :: Term a -> Term (Bind Int a)
-    cap = abstract (flip Map.lookup indices)
-    indices :: Map a Int
-    indices = Map.fromList $ zip names [0 ..]
+    tick :: State Int Int
+    tick = state $ \n -> (n, n + 1)
+    mkBinder :: String -> Context -> Depth -> State Int Binder
+    mkBinder lbl ctx depth = do
+      binderId <- tick
+      pure $ BinderInfo lbl binderId depth (Map.lookup lbl ctx)
+    go :: Context -> Depth -> Term -> State Int TermInfo
+    go ctx depth (Term term) = case term of
+      Var v -> flip fmap tick $ \varId ->
+        let var = Usage v varId (Map.lookup v ctx) depth
+         in TermInfo (singleton v var) $ Var var
+      Lam name body -> do
+        binder <- mkBinder name ctx depth
+        body' <- go (insert binder ctx) (depth + 1) body
+        pure $ TermInfo (delete name $ freeVars body') $ Lam binder body'
+      App a b -> do
+        a' <- go ctx depth a
+        b' <- go ctx depth b
+        pure $ TermInfo (freeVars a' <> freeVars b') $ App a' b'
+      Let name def body -> do
+        def' <- go ctx depth def
+        binder <- mkBinder name ctx depth
+        body' <- go (insert binder ctx) (depth + 1) body
+        pure $
+          TermInfo
+            { freeVars = freeVars def' <> delete name (freeVars body'),
+              infoTerm = Let binder def' body'
+            }
+      LetRec defs body -> do
+        -- TODO check name collisions
+        binders <- for (zip defs [0 ..]) $ \((binder, _), offset) ->
+          mkBinder binder ctx (depth + offset)
+        let ctx' = foldr insert ctx binders
+            depth' = depth + length defs
+        defs' <- for defs $ \(_, def) -> go ctx' depth' def
+        body' <- go ctx' depth' body
+        pure $
+          TermInfo
+            { freeVars =
+                let v' = foldr ((<>) . freeVars) (freeVars body') defs'
+                 in foldr (delete . binderName) v' binders,
+              infoTerm = LetRec (zip binders defs') body'
+            }
+      Lit n -> pure $ TermInfo mempty (Lit n)
+      Unit -> pure $ TermInfo mempty Unit
+      Plus a b -> do
+        a' <- go ctx depth a
+        b' <- go ctx depth b
+        pure $ TermInfo (freeVars a' <> freeVars b') (Plus a' b')
+      Pair a b -> do
+        a' <- go ctx depth a
+        b' <- go ctx depth b
+        pure $ TermInfo (freeVars a' <> freeVars b') (Pair a' b')
 
-letrec1 :: Ord a => a -> Term a -> Term a -> Term a
-letrec1 name binding = letrec [(name, binding)]
-
--- | generate a large term for performance testing.
--- explode 0 = id
--- explode n = (explode n-1, explode n-1)
-explode :: Int -> Term a
-explode = Let (Lam $ Var Bound1) . go
+-- TODO ignore letrec order?
+alphaEquivalent :: TermInfo -> TermInfo -> Bool
+alphaEquivalent (TermInfo _ a0) (TermInfo _ b0) = goTerm a0 b0
   where
-    go :: Int -> Term (Bind1 a)
-    go 0 = Var Bound1
-    go n = Let (Pair (Var Bound1) (Var Bound1)) (go (n - 1))
+    goTerm
+      (Var (Usage _ _ (Just (BinderInfo _ _ d1 _)) _))
+      (Var (Usage _ _ (Just (BinderInfo _ _ d2 _)) _)) =
+        d1 == d2
+    goTerm
+      (Var (Usage name1 _ Nothing _))
+      (Var (Usage name2 _ Nothing _)) =
+        name1 == name2
+    goTerm (Lam _ b1) (Lam _ b2) = alphaEquivalent b1 b2
+    goTerm (App a1 b1) (App a2 b2) = alphaEquivalent a1 a2 && alphaEquivalent b1 b2
+    goTerm (Let _ bind1 body1) (Let _ bind2 body2) = alphaEquivalent bind1 bind2 && alphaEquivalent body1 body2
+    goTerm (LetRec bind1 body1) (LetRec bind2 body2) = length bind1 == length bind2 && and (zipWith (alphaEquivalent `on` snd) bind1 bind2) && alphaEquivalent body1 body2
+    goTerm (Lit a) (Lit b) = a == b
+    goTerm (Plus a1 b1) (Plus a2 b2) = alphaEquivalent a1 a2 && alphaEquivalent b1 b2
+    goTerm (Pair a1 b1) (Pair a2 b2) = alphaEquivalent a1 a2 && alphaEquivalent b1 b2
+    goTerm Unit Unit = True
+    goTerm _ _ = False
+
+deBruijn :: Usage -> Maybe Int
+deBruijn (Usage _ _ (Just (BinderInfo _ _ bind _)) use) = Just (use - bind - 1)
+deBruijn _ = Nothing
+
+instance Eq Binder where (==) = on (==) binderID
+
+instance Ord Binder where compare = on compare binderID

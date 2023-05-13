@@ -4,53 +4,46 @@
 
 module Spec.HM where
 
-import Control.Applicative
 import qualified Control.Exception as E
 import Control.Monad
-import Data.Foldable (toList)
-import qualified HM.Check as Check
-import qualified HM.FastCheck as Fast
+import Data.Function (on)
+import qualified HM.Free.Check as Check
+import qualified HM.Free.FastCheck as Fast
+import qualified HM.Free.Term as Free
 import HM.Term
+import HM.Term.Embed
 import HM.Type
 import Lib.Free
+import Spec.Instances ()
 import Test.HUnit
 import Test.HUnit.Lang (FailureReason (ExpectedButGot), HUnitFailure (HUnitFailure))
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 
-instance (Arbitrary a, Arbitrary1 f, Foldable f) => Arbitrary (Free f a) where
-  arbitrary = sized go
-    where
-      go 0 = Pure <$> arbitrary
-      go n = oneof [Pure <$> arbitrary, Fix <$> resize (div n 4 * 3) arbitrary1]
-  shrink (Pure a) = Pure <$> shrink a
-  shrink (Fix f) = toList f <> (Fix <$> shrink1 f)
-
-instance Arbitrary1 TypeF where
-  liftArbitrary arb =
-    frequency
-      [ (1, pure TInt),
-        (1, pure TUnit),
-        (1, liftA2 TPair arb arb),
-        (3, liftA2 Arr arb arb)
-      ]
-  liftShrink rec (Arr a b) = [Arr a' b | a' <- rec a] <> [Arr a' b | a' <- rec a]
-  liftShrink rec (TPair a b) = [TPair a' b | a' <- rec a] <> [TPair a' b | a' <- rec a]
-  liftShrink _ TInt = []
-  liftShrink _ TUnit = []
-
 spec :: Spec
 spec = do
+  describe "props" props
   describe "Subtyping" $ do
     prop "Every type t <: t" $ \(s :: Type Int) -> subtype s s
     prop "Every type t <: t with remapped variables" $ \(s :: Type Int) (Blind (f :: Int -> Int)) -> subtype s (f <$> s)
     prop "Every type t <: t with randomly instantiated variables" $ \(s :: Type Int) (Blind (f :: Int -> Type Int)) -> subtype s (s >>= f)
     prop "(∀ x. x) <: every type" $ \(s :: Type Int) -> subtype (pure ()) s
-  describe "reference" $ mkSpec Check.inferT
-  describe "faster" $ mkSpec Fast.inferT
+  describe "reference" $ mkSpec (Check.inferT . Free.fromTermInfo)
+  describe "faster" $ mkSpec (Fast.inferT . Free.fromTermInfo)
 
-mkSpec :: (Term String -> Either String (Type Int)) -> Spec
+props :: Spec
+props = do
+  prop "a α toTerm (fromTerm a)" $ \(a :: Term) ->
+    on alphaEquivalent resolve a (Free.toTerm (Free.fromTerm a))
+  prop "a α fromTerm (toTerm a)" $ \(a :: Free.Term String) ->
+    a == Free.fromTerm (Free.toTerm a)
+  prop "a α b == toTerm a α toTerm b" $ withMaxSuccess 10000 $ \(a :: Free.Term String) b ->
+    (a == b) == on alphaEquivalent (resolve . Free.toTerm) a b
+  prop "a α b == fromTerm a α fromTerm b" $ withMaxSuccess 10000 $ \(a :: Term) b ->
+    on alphaEquivalent resolve a b == (Free.fromTerm a == Free.fromTerm b)
+
+mkSpec :: (TermInfo -> Either String (Type Int)) -> Spec
 mkSpec infer = do
   describe "SKI Combinators" $ do
     it "I; λ x. x : a -> a" $
@@ -65,6 +58,11 @@ mkSpec infer = do
       checks
         (λ "x" $ λ "y" $ λ "z" $ "x" @ "z" @ ("y" @ "z"))
         (("a" ~> "b" ~> "c") ~> ("a" ~> "b") ~> ("a" ~> "c"))
+  describe "other things" $ do
+    it "on" $
+      checks
+        (λ "fc" $ λ "fb" $ λ "a0" $ λ "a1" $ "fc" @ ("fb" @ "a0") @ ("fb" @ "a1"))
+        (("b" ~> "b" ~> "c") ~> ("a" ~> "b") ~> "a" ~> "a" ~> "c")
   describe "Polymorphism" $ do
     it "id id " $
       checks
@@ -72,17 +70,17 @@ mkSpec infer = do
         ("a" ~> "a")
     it "let id x = x in (id, id)" $
       checks
-        (let' "id" (λ "x" "x") (Pair "id" "id"))
+        (let' "id" (λ "x" "x") (pair "id" "id"))
         (tup ("a" ~> "a") ("b" ~> "b"))
     it "double CPS" $
       checks
-        (λ "x" $ let' "cps" (λ "x" $ λ "f" $ "f" @ "x") $ Pair ("cps" @ "x") ("cps" @ "x"))
+        (λ "x" $ let' "cps" (λ "x" $ λ "f" $ "f" @ "x") $ pair ("cps" @ "x") ("cps" @ "x"))
         ("r" ~> tup (("r" ~> "a") ~> "a") (("r" ~> "b") ~> "b"))
     it "CPS soup" $
       checks
         ( let'
             "cp"
-            (λ "x" $ λ "f" $ let' "id" (λ "x" "x") $ "id" @ "f" @ Pair "x" ("id" @ "x"))
+            (λ "x" $ λ "f" $ let' "id" (λ "x" "x") $ "id" @ "f" @ pair "x" ("id" @ "x"))
             "cp"
         )
         ("a" ~> (tup "a" "a" ~> "r") ~> "r")
@@ -103,7 +101,7 @@ mkSpec infer = do
         ( λ "a" $
             let'
               "withA"
-              (λ "x" $ Pair "x" "a")
+              (λ "x" $ pair "x" "a")
               ("withA" @ 0)
         )
         ("a" ~> tup (Fix TInt) "a")
@@ -118,34 +116,34 @@ mkSpec infer = do
       it "exhibit A" . infers $
         letrec
           [("id", λ "x" "x")]
-          (Pair ("id" @ Unit) ("id" @ 0))
+          (pair ("id" @ unit) ("id" @ 0))
       it "exhibit B" . typeError $
         letrec
           [ ("id", λ "x" "x"),
-            ("a", Pair ("id" @ Unit) ("id" @ 0))
+            ("a", pair ("id" @ unit) ("id" @ 0))
           ]
           "a"
   describe "Infinite types" $ do
-    it "() ()" $ typeError (Unit @ Unit)
+    it "() ()" $ typeError (unit @ unit)
     it "λ f. f f" . typeError $
       λ "f" ("f" @ "f")
     it "Y = λ f. (λ x. f (x x)) (λ x. f (x x))" . typeError $
       λ "f" $
         λ "x" ("f" @ ("x" @ "x"))
           @ λ "x" ("f" @ ("x" @ "x"))
-  it "explosion" . infers $ explode 10
+  it "explosion" . infers $ explodeLet 10
   where
-    checks :: Term String -> Type String -> Assertion
+    checks :: Term -> Type String -> Assertion
     checks term typ = do
-      typ' <- either assertFailure pure $ infer term
+      typ' <- either assertFailure pure $ infer (resolve term)
       unless (subtype typ' typ && subtype typ typ') . E.throwIO $
         HUnitFailure Nothing $
           ExpectedButGot Nothing (show typ) (show typ')
 
-    typeError :: Term String -> Assertion
-    typeError term = case infer term of
+    typeError :: Term -> Assertion
+    typeError term = case infer (resolve term) of
       Left _ -> pure ()
       Right typ -> assertFailure $ "Unexpected success: " <> show typ
 
-    infers :: Term String -> Assertion
-    infers term = either assertFailure (const $ pure ()) $ infer term
+    infers :: Term -> Assertion
+    infers term = either assertFailure (const $ pure ()) $ infer (resolve term)

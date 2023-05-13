@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module HM.Check (inferT) where
+module HM.Free.Check (inferT) where
 
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -11,7 +11,7 @@ import Control.Monad.State.Strict
 import Data.Foldable (toList)
 import qualified Data.IntMap as IntMap
 import Data.Void
-import HM.Term
+import HM.Free.Term
 import HM.Type
 import Lib.Free
 import qualified Lib.Free as Free

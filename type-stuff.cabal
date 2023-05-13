@@ -35,11 +35,12 @@ library
   import:          common-options
   hs-source-dirs:  src
   exposed-modules:
-    HM.Check
-    HM.FastCheck
+    HM.Free.Check
+    HM.Free.FastCheck
+    HM.Free.Term
     HM.Term
+    HM.Term.Embed
     HM.Type
-    HM2.Term
     Lib.Free
     Lib.Match
     Lib.Telescope
@@ -59,13 +60,16 @@ test-suite type-stuff-test
   main-is:        Spec.hs
   other-modules:
     Spec.HM
-    Spec.HM2
+    Spec.Instances
+    Spec.Instances.Free
+    Spec.Instances.HM
 
   build-depends:
     , containers
     , hspec
     , HUnit
     , QuickCheck
+    , rebound
     , safe-gen
     , type-stuff
 
