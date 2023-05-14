@@ -1,24 +1,29 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import Control.DeepSeq (deepseq)
+import Control.DeepSeq (NFData, deepseq)
 import Criterion
 import Criterion.Main
-import qualified HM.Check as Reference
-import qualified HM.FastCheck as Fast
+import qualified HM.Check as HM
+import qualified HM.Free.Check as Ref
+import qualified HM.Free.FastCheck as Fast
+import qualified HM.Free.Term as Free
 import HM.Term
+import HM.Term.Embed
 import HM.Type
 
 -- TODO benchmark `infer`, not `inferT`
 benchInfer ::
-  (Term String -> Either String (Type Int)) ->
+  NFData a =>
+  (TermInfo -> a) ->
+  (a -> Either String (Type Int)) ->
   [Benchmark]
-benchInfer infer =
+benchInfer convert infer =
   [ run "Int" 0,
     bgroup
       "explode"
-      [ run "0" (explode 0),
-        run "5" (explode 5),
-        run "10" (explode 10)
+      [ run "0" (explodeLet 0),
+        run "5" (explodeLet 5),
+        run "10" (explodeLet 10)
       ],
     bgroup
       "SKI"
@@ -28,12 +33,15 @@ benchInfer infer =
       ]
   ]
   where
-    run :: String -> Term String -> Benchmark
-    run label term = deepseq term $ bench label $ whnf infer term
+    run :: String -> Term -> Benchmark
+    run label term =
+      let term' = convert $ resolve term
+       in deepseq term' $ bench label $ whnf infer term'
 
 main :: IO ()
 main =
   defaultMain
-    [ bgroup "reference" $ benchInfer Reference.inferT,
-      bgroup "fast" $ benchInfer Fast.inferT
+    [ bgroup "reference" $ benchInfer Free.fromTermInfo Ref.inferT,
+      bgroup "fast" $ benchInfer Free.fromTermInfo Fast.inferT,
+      bgroup "term" $ benchInfer id HM.inferT
     ]

@@ -7,6 +7,7 @@ module Spec.HM where
 import qualified Control.Exception as E
 import Control.Monad
 import Data.Function (on)
+import qualified HM.Check as HM
 import qualified HM.Free.Check as Check
 import qualified HM.Free.FastCheck as Fast
 import qualified HM.Free.Term as Free
@@ -31,6 +32,7 @@ spec = do
     prop "(∀ x. x) <: every type" $ \(s :: Type Int) -> subtype (pure ()) s
   describe "reference" $ mkSpec (Check.inferT . Free.fromTermInfo)
   describe "faster" $ mkSpec (Fast.inferT . Free.fromTermInfo)
+  describe "term" $ mkSpec HM.inferT
 
 props :: Spec
 props = do

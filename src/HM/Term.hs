@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
@@ -17,6 +18,7 @@ module HM.Term
   )
 where
 
+import Control.DeepSeq (NFData)
 import Control.Monad.Trans.State
 import Data.Bitraversable (bitraverse)
 import Data.Function (on)
@@ -37,6 +39,7 @@ data TermF b v a
   | Plus a a
   | Pair a a
   deriving stock (Eq, Show, Functor, Foldable, Traversable, Generic)
+  deriving anyclass (NFData)
 
 {-# INLINE termFT #-}
 termFT ::
@@ -73,9 +76,11 @@ newtype Term = Term (TermF String String Term)
   deriving stock (Generic)
 
 data Tree a = Leaf !a | Branch !(Tree a) !(Tree a)
-  deriving (Functor, Foldable, Traversable)
+  deriving stock (Functor, Foldable, Traversable, Generic)
+  deriving anyclass (NFData)
 
 newtype FreeVars = FreeVars {unFreeVars :: Map String (Tree Usage)}
+  deriving newtype (NFData)
 
 instance Semigroup FreeVars where FreeVars a <> FreeVars b = FreeVars $ Map.unionWith Branch a b
 
@@ -98,6 +103,8 @@ data TermInfo = TermInfo
   { freeVars :: FreeVars,
     infoTerm :: TermF Binder Usage TermInfo
   }
+  deriving stock (Generic)
+  deriving anyclass (NFData)
 
 data Binder = BinderInfo
   { binderName :: !String,
@@ -105,13 +112,17 @@ data Binder = BinderInfo
     binderDepth :: !Depth,
     binderShadow :: !(Maybe Binder)
   }
+  deriving stock (Generic)
+  deriving anyclass (NFData)
 
 data Usage = Usage
-  { varName :: !String, -- TODO this can be unified with varBinder into Either String Binder
+  { varName :: !String,
     varID :: !Int,
-    varBinder :: Maybe Binder,
+    varBinder :: Maybe Binder, -- If this is `Just b`, that binderName b == varName v
     varDepth :: Depth
   }
+  deriving stock (Generic)
+  deriving anyclass (NFData)
 
 resolve :: Term -> TermInfo
 resolve term' = evalState (go mempty 0 term') 0
