@@ -12,7 +12,7 @@ type Depth = Int
 
 data Binder = BinderInfo
   { binderName :: !String,
-    binderID :: !Int,
+    binderID :: !Int, -- Expected to be unique
     binderDepth :: !Depth,
     binderShadow :: !(Maybe Binder)
   }
@@ -25,9 +25,13 @@ instance Ord Binder where compare = on compare binderID
 
 data Usage = Usage
   { varName :: !String,
-    varID :: !Int,
+    varID :: !Int, -- Expected to be unique
     varBinder :: Maybe Binder, -- If this is `Just b`, that binderName b == varName v
     varDepth :: Depth
   }
   deriving stock (Generic)
   deriving anyclass (NFData)
+
+instance Eq Usage where (==) = on (==) varID
+
+instance Ord Usage where compare = on compare varID

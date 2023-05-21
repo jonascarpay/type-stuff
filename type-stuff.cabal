@@ -47,6 +47,7 @@ library
     Lib.Match
     Lib.Telescope
     Lib.UF
+    Lib.MMap
 
   build-depends:
     , containers

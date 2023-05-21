@@ -11,7 +11,6 @@ module HM.Term
     TermInfo (..),
     Usage (..),
     Binder (..),
-    FreeVars (..),
     resolve,
     alphaEquivalent,
     deBruijn,
@@ -28,6 +27,7 @@ import Data.String (IsString (..))
 import Data.Traversable (for)
 import GHC.Generics
 import Lib.Binder
+import Lib.MMap (MMap, delete, singleton)
 
 data TermF b v a
   = Var v
@@ -76,27 +76,12 @@ newtype Term = Term (TermF String String Term)
   deriving newtype (Eq, Show, IsString)
   deriving stock (Generic)
 
-data Tree a = Leaf !a | Branch !(Tree a) !(Tree a)
-  deriving stock (Functor, Foldable, Traversable, Generic)
-  deriving anyclass (NFData)
-
-newtype FreeVars = FreeVars {unFreeVars :: Map String (Tree Usage)}
-  deriving newtype (NFData)
-
-instance Semigroup FreeVars where FreeVars a <> FreeVars b = FreeVars $ Map.unionWith Branch a b
-
-instance Monoid FreeVars where mempty = FreeVars mempty
+type FreeVars = MMap String Usage
 
 type Context = Map String Binder
 
 insert :: Binder -> Context -> Context
 insert b = Map.insert (binderName b) b
-
-singleton :: String -> Usage -> FreeVars
-singleton s v = FreeVars $ Map.singleton s (Leaf v)
-
-delete :: String -> FreeVars -> FreeVars
-delete s (FreeVars v) = FreeVars (Map.delete s v)
 
 data TermInfo = TermInfo
   { freeVars :: FreeVars,
