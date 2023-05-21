@@ -11,6 +11,7 @@ import Data.Functor.Identity
 import Data.List (elemIndex)
 import GHC.Generics
 import qualified HM.Term as HM
+import Lib.Binder
 import Rebound
 
 data Term a
@@ -46,7 +47,7 @@ fromTerm :: HM.Term -> Term String
 fromTerm (HM.Term t) = fromTermF (fromTerm <$> t)
 
 fromTermInfo :: HM.TermInfo -> Term String
-fromTermInfo (HM.TermInfo _ t) = fromTermF (runIdentity $ HM.termFT (pure . HM.binderName) (pure . HM.varName) (pure . fromTermInfo) t)
+fromTermInfo (HM.TermInfo _ t) = fromTermF (runIdentity $ HM.termFT (pure . binderName) (pure . varName) (pure . fromTermInfo) t)
 
 toTerm :: Term String -> HM.Term
 toTerm = go 0 id

@@ -27,6 +27,7 @@ import qualified Data.Map as Map
 import Data.String (IsString (..))
 import Data.Traversable (for)
 import GHC.Generics
+import Lib.Binder
 
 data TermF b v a
   = Var v
@@ -97,29 +98,9 @@ singleton s v = FreeVars $ Map.singleton s (Leaf v)
 delete :: String -> FreeVars -> FreeVars
 delete s (FreeVars v) = FreeVars (Map.delete s v)
 
-type Depth = Int
-
 data TermInfo = TermInfo
   { freeVars :: FreeVars,
     infoTerm :: TermF Binder Usage TermInfo
-  }
-  deriving stock (Generic)
-  deriving anyclass (NFData)
-
-data Binder = BinderInfo
-  { binderName :: !String,
-    binderID :: !Int,
-    binderDepth :: !Depth,
-    binderShadow :: !(Maybe Binder)
-  }
-  deriving stock (Generic)
-  deriving anyclass (NFData)
-
-data Usage = Usage
-  { varName :: !String,
-    varID :: !Int,
-    varBinder :: Maybe Binder, -- If this is `Just b`, that binderName b == varName v
-    varDepth :: Depth
   }
   deriving stock (Generic)
   deriving anyclass (NFData)
@@ -206,7 +187,3 @@ alphaEquivalent (TermInfo _ a0) (TermInfo _ b0) = goTerm a0 b0
 deBruijn :: Usage -> Maybe Int
 deBruijn (Usage _ _ (Just (BinderInfo _ _ bind _)) use) = Just (use - bind - 1)
 deBruijn _ = Nothing
-
-instance Eq Binder where (==) = on (==) binderID
-
-instance Ord Binder where compare = on compare binderID

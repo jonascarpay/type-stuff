@@ -13,14 +13,13 @@ import qualified Data.Map as Map
 import Data.Void
 import HM.Term
 import HM.Type
+import Lib.Binder
 import qualified Lib.Free as Free
 import Lib.Match
 import Lib.UF (Point)
 import qualified Lib.UF as UF
 
 type Unify s = ExceptT String (ST s)
-
-type Depth = Word
 
 data TVar' s = TVHole Depth | TVTy (TypeF (TVar s))
 

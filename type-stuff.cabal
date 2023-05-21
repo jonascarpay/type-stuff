@@ -42,6 +42,7 @@ library
     HM.Term
     HM.Term.Embed
     HM.Type
+    Lib.Binder
     Lib.Free
     Lib.Match
     Lib.Telescope
