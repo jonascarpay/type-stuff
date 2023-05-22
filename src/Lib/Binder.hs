@@ -23,6 +23,7 @@ instance Eq Binder where (==) = on (==) binderID
 
 instance Ord Binder where compare = on compare binderID
 
+-- TODO Make varBinder poly, so we can prove it exists?
 data Usage = Usage
   { varName :: !String,
     varID :: !Int, -- Expected to be unique

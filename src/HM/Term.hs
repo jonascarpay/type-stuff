@@ -9,8 +9,6 @@ module HM.Term
     termFT,
     Term (..),
     TermInfo (..),
-    Usage (..),
-    Binder (..),
     resolve,
     alphaEquivalent,
     deBruijn,

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingStrategies #-}
 
 module Dep.Term
@@ -6,6 +7,7 @@ module Dep.Term
     Term (..),
     TermInfo (..),
     VF (..),
+    FreeVars,
     resolve,
   )
 where
@@ -26,6 +28,7 @@ data ValF b f
   | UnitT
   | Star
   | Pi b f f
+  deriving stock (Functor, Foldable, Traversable)
 
 data NeutF v fn fv
   = Var v
@@ -39,9 +42,11 @@ data VF binder var val_v neut_n neut_v
 
 newtype Term = Term (VF String String Term Term Term)
 
+type FreeVars = MMap String Usage
+
 data TermInfo = TermInfo
-  { freeVars :: MMap String Usage,
-    _termInfo :: VF Binder Usage TermInfo TermInfo TermInfo
+  { freeVars :: FreeVars,
+    termInfo :: VF Binder Usage TermInfo TermInfo TermInfo
   }
 
 data ResolveCtx = ResolveCtx
