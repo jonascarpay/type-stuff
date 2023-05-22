@@ -1,6 +1,14 @@
 {-# LANGUAGE DerivingStrategies #-}
 
-module Dep.Term where
+module Dep.Term
+  ( ValF (..),
+    NeutF (..),
+    Term (..),
+    TermInfo (..),
+    VF (..),
+    resolve,
+  )
+where
 
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Reader
@@ -31,16 +39,14 @@ data VF binder var val_v neut_n neut_v
 
 newtype Term = Term (VF String String Term Term Term)
 
-type Context = Map String Binder
-
 data TermInfo = TermInfo
   { freeVars :: MMap String Usage,
-    termInfo :: VF Binder Usage TermInfo TermInfo TermInfo
+    _termInfo :: VF Binder Usage TermInfo TermInfo TermInfo
   }
 
 data ResolveCtx = ResolveCtx
-  { depth :: Int,
-    bindings :: Map String Binder
+  { _depth :: Int,
+    _bindings :: Map String Binder
   }
 
 type Resolve = ReaderT ResolveCtx (State Int)
