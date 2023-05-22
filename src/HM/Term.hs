@@ -98,7 +98,7 @@ resolve term' = evalState (go mempty 0 term') 0
     mkBinder :: String -> Context -> Depth -> State Int Binder
     mkBinder lbl ctx depth = do
       binderId <- tick
-      pure $ BinderInfo lbl binderId depth (Map.lookup lbl ctx)
+      pure $ Binder lbl binderId depth (Map.lookup lbl ctx)
     go :: Context -> Depth -> Term -> State Int TermInfo
     go ctx depth (Term term) = case term of
       Var v -> flip fmap tick $ \varId ->
@@ -152,8 +152,8 @@ alphaEquivalent :: TermInfo -> TermInfo -> Bool
 alphaEquivalent (TermInfo _ a0) (TermInfo _ b0) = goTerm a0 b0
   where
     goTerm
-      (Var (Usage _ _ (Just (BinderInfo _ _ d1 _)) _))
-      (Var (Usage _ _ (Just (BinderInfo _ _ d2 _)) _)) =
+      (Var (Usage _ _ (Just (Binder _ _ d1 _)) _))
+      (Var (Usage _ _ (Just (Binder _ _ d2 _)) _)) =
         d1 == d2
     goTerm
       (Var (Usage name1 _ Nothing _))
@@ -170,5 +170,5 @@ alphaEquivalent (TermInfo _ a0) (TermInfo _ b0) = goTerm a0 b0
     goTerm _ _ = False
 
 deBruijn :: Usage -> Maybe Int
-deBruijn (Usage _ _ (Just (BinderInfo _ _ bind _)) use) = Just (use - bind - 1)
+deBruijn (Usage _ _ (Just (Binder _ _ bind _)) use) = Just (use - bind - 1)
 deBruijn _ = Nothing

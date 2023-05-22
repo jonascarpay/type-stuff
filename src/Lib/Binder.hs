@@ -10,7 +10,7 @@ import GHC.Generics (Generic)
 
 type Depth = Int
 
-data Binder = BinderInfo
+data Binder = Binder
   { binderName :: !String,
     binderID :: !Int, -- Expected to be unique
     binderDepth :: !Depth,
